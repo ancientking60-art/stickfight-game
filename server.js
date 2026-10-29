@@ -30,7 +30,7 @@ const SIM_ONLY = !username || username === 'your_tiktok_username' || username.to
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.ttf': 'font/ttf',
   '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
@@ -75,8 +75,39 @@ const server = http.createServer((req, res) => {
     }));
     return;
   }
+  if (url.pathname === '/yui/manifest.webmanifest') {
+    // Yui (anime maid LIVE character) home-screen app; same ?user / clean rules as the game
+    const qu = cleanUser(url.searchParams.get('user'));
+    const q = new URLSearchParams(); if (qu) q.set('user', qu); if (url.searchParams.has('clean')) q.set('clean', '1');
+    const qs = q.toString() ? '?' + q.toString() : '';
+    res.writeHead(200, { 'Content-Type': MIME['.webmanifest'], 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({
+      id: '/yui/' + qs, name: qu ? `Yui LIVE - @${qu}` : 'Yui LIVE', short_name: 'Yui',
+      start_url: qu && q.has('clean') ? '/yui/u/' + encodeURIComponent(qu) : '/yui/' + qs, scope: '/yui/', display: 'fullscreen', display_override: ['fullscreen', 'standalone'], orientation: 'portrait',
+      background_color: '#0b0710', theme_color: '#0b0710',
+      icons: [
+        { src: '/yui/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/yui/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/yui/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    }));
+    return;
+  }
   let p;
   try { p = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); res.end(); return; }
+  // Yui page: '/yui', '/yui/' or the short streaming link '/yui/u/NAME' (= ?user=NAME&clean=1)
+  const yu = /^\/yui\/u\/([^/]+)\/?$/.exec(p);
+  if (p === '/yui' || p === '/yui/' || p === '/yui/index.html' || yu) {
+    fs.readFile(path.join(PUBLIC, 'yui', 'index.html'), 'utf8', (err, html) => {
+      if (err) { res.writeHead(500); res.end(); return; }
+      const qu = cleanUser(yu ? yu[1] : url.searchParams.get('user'));
+      const q = new URLSearchParams(); if (qu && !/^(reset|clear|forget|none)$/i.test(qu)) q.set('user', qu); if (yu || url.searchParams.has('clean')) q.set('clean', '1');
+      const out = html.replace('href="/yui/manifest.webmanifest"', `href="/yui/manifest.webmanifest${q.toString() ? '?' + q.toString().replace(/&/g, '&amp;') : ''}"`);
+      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
+      res.end(out);
+    });
+    return;
+  }
   // the game page: '/', '/index.html' or the short streaming link '/u/NAME' (= ?user=NAME&clean=1).
   // The Home Screen manifest link already carries the name, so 'Add to Home Screen' always keeps it.
   const um = /^\/u\/([^/]+)\/?$/.exec(p);
@@ -336,6 +367,7 @@ server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log('  Keep this black window open while you stream.');
   console.log('==============================================');
   console.log(`\nTip: open ${url}/?user=YOUR_TIKTOK_NAME to connect to any TikTok LIVE.`);
+  console.log(`Yui (anime maid character): ${url}/yui/?user=YOUR_TIKTOK_NAME  (stream link: /yui/u/NAME)`);
   if (SIM_ONLY) console.log('No TikTok username in the link or config.json -> SIMULATOR mode (bots + test buttons).');
   else console.log(`Default TikTok account (config.json): @${username} - connects when the game page opens.`);
   if (config.openBrowser !== false && !process.env.NO_BROWSER && !process.env.RENDER) openBrowser(url);

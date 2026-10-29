@@ -1,0 +1,20 @@
+{
+  "intro":  [["tease", "Good evening. I'm Yui. Type a command if you want something... or just watch. Your choice."]],
+  "spin":   [["tease", "Spinning for you... happy now?"], ["tease", "There. Satisfied?"], ["happy", "Round and round... don't get dizzy watching."], ["tease", "One spin. Don't ask for another one."]],
+  "bow":    [["soft", "As you wish, master."], ["soft", "A proper bow, just for you."], ["tease", "Bowing... try to look grateful."]],
+  "sit":    [["tease", "I'll rest for a moment. Don't get too comfortable."], ["tease", "Fine. But don't expect me to stay quiet."], ["tease", "Sitting down. Entertain me, then."]],
+  "stand":  [["tease", "Back on my feet. What do you want now?"], ["tease", "Up again. You're very demanding."], ["happy", "Standing. Happy? Next order."]],
+  "dance":  [["tease", "You really want to see me dance that badly?"], ["happy", "Just a little dance. Don't stare too hard."], ["happy", "Fine, fine. One dance... and you clap."]],
+  "look":   [["soft", "Looking at you... anything interesting?"], ["tease", "Hmm... you're staring back, aren't you?"], ["soft", "Closer? Alright. Just for a second."]],
+  "wink":   [["tease", "Only for the ones who behave."], ["tease", "That one was a secret."], ["tease", "Don't tell the others."]],
+  "hello":  [["tease", "Welcome. Try not to cause too much trouble."], ["happy", "Oh, a new guest. Behave yourself."], ["tease", "Hello there. Type a command, if you dare."]],
+  "praise": [["tease", "Flattery won't make me go easy on you."], ["tease", "Hmph. Say that again... slowly."], ["tease", "Cute? I know. Next."]],
+  "giftS":  [["soft", "Thank you... I see you."], ["soft", "A little gift? How sweet."], ["soft", "Noted. Thank you."]],
+  "giftM":  [["happy", "Oh? Someone's trying to impress me."], ["happy", "Now that's more like it."], ["happy", "Hmm... you're spoiling me."]],
+  "giftB":  [["shy", "Alright, you have my attention. What do you want?"], ["shy", "Wait... that's a lot. Thank you, really."], ["shy", "You win. The next command is yours."]],
+  "multi":  [["pout", "So many orders at once... pick one."], ["pout", "One at a time, please. I only have two hands."]],
+  "quiet":  [["bored", "Quiet today. Are you all just staring, or did you forget how to type?"], ["bored", "Hello? I know you're there. Type something."], ["bored", "Still nobody? I'll just stand here looking pretty, then."]],
+  "spam":   [["pout", "One command at a time. I'm a maid, not a machine."], ["pout", "Again? Patience, please."], ["pout", "Spamming won't make me faster."]],
+  "follow": [["happy", "A new follower? Good choice."], ["soft", "Thank you for following. Stay a while."]],
+  "likes":  [["happy", "So many hearts... I'll pretend I didn't notice."], ["tease", "Keep tapping. I'm counting."]]
+}

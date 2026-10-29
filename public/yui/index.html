@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YUI LIVE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0710">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Yui">
+<base href="/yui/">
+<link id="mf" rel="manifest" href="/yui/manifest.webmanifest">
+<script>
+  (function () {
+    var shown = 0;
+    window.__sfErr = function (msg) {
+      if (shown++ > 3) return;
+      var el = document.getElementById('errLine');
+      if (!el) { el = document.createElement('div'); el.id = 'errLine'; (document.body || document.documentElement).appendChild(el); }
+      el.textContent = '! ' + String(msg).slice(0, 160);
+    };
+    window.addEventListener('error', function (e) { if (e && e.message) window.__sfErr(e.message + (e.filename ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')' : '')); });
+    window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; window.__sfErr('promise: ' + (r && r.message ? r.message : r)); });
+  })();
+</script>
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="preload" href="fonts/Fredoka.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="img/idle.webp" as="image">
+<link rel="preload" href="img/room.jpg" as="image">
+<style>
+  @font-face { font-family: 'Fredoka'; src: url('fonts/Fredoka.ttf') format('truetype'); font-weight: 300 700; }
+  html, body { margin: 0; height: 100%; background: #0b0710; overflow: hidden; font-family: 'Fredoka', Arial, sans-serif;
+               touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  #wrap { position: fixed; left: 0; top: 0; right: 0; bottom: 0; }
+  canvas { background: #0b0710; display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  body.fixed #wrap { display: flex; align-items: center; justify-content: center; }
+  body.fixed canvas { position: static; height: 100vh; width: calc(100vh * 9 / 16); max-width: 100vw; max-height: calc(100vw * 16 / 9); }
+  #tap { position: fixed; left: 0; top: 0; right: 0; bottom: 0; padding: env(safe-area-inset-top) 4vw env(safe-area-inset-bottom); z-index: 20; display: flex; align-items: center; justify-content: center; flex-direction: column;
+         background: radial-gradient(ellipse at center, rgba(40,10,30,.45), rgba(5,0,8,.86)); cursor: pointer; text-align: center; }
+  #tap .hi { font: 600 6vmin/1.1 'Fredoka', Arial, sans-serif; color: #ffb6d2; margin-bottom: 3vmin; letter-spacing: .03em; }
+  #tap .t1 { font: 700 13vmin/1 'Fredoka', Arial, sans-serif; letter-spacing: .03em; color: #fff;
+             text-shadow: 0 0 .3em #ff5fa0, 0 .05em 0 #3a0820; animation: pulse 1.4s ease-in-out infinite; }
+  #tap .t2 { margin-top: 3vmin; font: 500 4.4vmin 'Fredoka', Arial, sans-serif; color: #ffe2ee; opacity: .9; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  #fsHint { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 15;
+            background: rgba(0,0,0,.72); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 999px;
+            padding: 8px 16px; font: 13px 'Fredoka', Arial, sans-serif; white-space: nowrap; cursor: pointer; }
+  #tap .ios { display: block; margin: 5vmin auto 0; max-width: 80vw; font: 3.8vmin/1.45 'Fredoka', Arial, sans-serif; color: #fff; opacity: .85; }
+  #tap .ios b { color: #ffb6d2; }
+  #nameBox { margin-top: 6vmin; text-align: center; font: 500 3.8vmin 'Fredoka', Arial, sans-serif; color: #fff; }
+  #nameBox div { margin-top: 2vmin; display: flex; gap: 2vmin; justify-content: center; }
+  #nameBox input { width: 52vmin; font: 16px 'Fredoka', Arial, sans-serif; padding: 2.2vmin 3vmin; border-radius: 2vmin; border: 2px solid #ff8fb8; background: rgba(0,0,0,.6); color: #fff; }
+  #nameBox button { font: 600 16px 'Fredoka', Arial, sans-serif; padding: 0 4vmin; border-radius: 2vmin; border: 0; background: #ff8fb8; color: #2a0614; }
+  #nameBox small { display: block; margin-top: 2vmin; opacity: .7; font-size: 3vmin; }
+  #sndBadge { position: fixed; right: calc(8px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 25;
+              background: rgba(0,0,0,.68); color: #fff; border: 1px solid rgba(255,143,184,.8); border-radius: 999px; padding: 6px 12px;
+              font: 12px 'Fredoka', Arial, sans-serif; white-space: nowrap; cursor: pointer; animation: pulse 1.6s ease-in-out infinite; }
+  #tap.hidden, #fsHint.hidden, #nameBox.hidden, #sndBadge.hidden { display: none; }
+  #errLine { position: fixed; left: 4px; bottom: calc(2px + env(safe-area-inset-bottom)); z-index: 30; max-width: 96vw; overflow: hidden; white-space: nowrap;
+             text-overflow: ellipsis; font: 10px/1.3 monospace; color: #ff8080; background: rgba(0,0,0,.6); padding: 1px 4px; pointer-events: none; }
+  #sim { position: fixed; top: 8px; right: 8px; width: 240px; max-height: calc(100vh - 16px); overflow-y: auto;
+         background: rgba(22,8,24,.93); border: 1px solid #d0508a; border-radius: 10px; padding: 8px; color: #ffe6f0; font-size: 12px; z-index: 5;
+         box-shadow: 0 0 18px rgba(255,80,150,.3); touch-action: pan-y; -webkit-user-select: auto; user-select: auto; }
+  #sim.hidden { display: none; }
+  #sim h3 { margin: 2px 0 6px; font-size: 14px; color: #ff9cc6; letter-spacing: 1px; }
+  #sim .lbl { margin: 4px 0 3px; color: #ffb6d2; }
+  #sim .row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  #sim button { flex: 1 1 auto; background: #3a1030; color: #fff; border: 1px solid #b04078; border-radius: 6px; padding: 5px 6px;
+                font: 11px 'Fredoka', Arial, sans-serif; cursor: pointer; }
+  #sim button:hover { background: #5a1848; }
+  #sim button.on { background: #1f8a3b; border-color: #3fdc6a; }
+  #sim small { color: #e0a8c4; display: block; margin-top: 4px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="sim">
+  <h3>YUI TEST BUTTONS (H hides)</h3>
+  <div class="lbl">Chat commands</div>
+  <div class="row" id="cmdBtns"></div>
+  <div class="lbl">Gifts (coins)</div>
+  <div class="row" id="giftBtns"></div>
+  <div class="row">
+    <button id="likeBtn">20 Likes (L)</button>
+    <button id="followBtn">Follow (F)</button>
+  </div>
+  <div class="row">
+    <button id="multiBtn">Multi cmd (X)</button>
+    <button id="spamBtn">Spammer (S)</button>
+    <button id="floodBtn">Busy chat</button>
+    <button id="quietBtn">Quiet now</button>
+  </div>
+  <div class="row">
+    <button id="autoBtn">Auto demo (A)</button>
+    <button id="soundBtn">Sound ON (M)</button>
+    <button id="musicBtn">Music ON (B)</button>
+  </div>
+  <small>Keys: 1-9 commands, Q W E R T gifts, L likes, F follow, X multi, S spam, A auto, M sound, B music, H hide.<br>
+  <span id="liveInfo">-</span></small>
+</div>
+<div id="tap" class="hidden">
+  <div class="hi">Yui is waiting ♡</div>
+  <div class="t1">TAP TO START</div>
+  <div class="t2">turns on sound + full screen</div>
+  <form id="nameBox" class="hidden" autocomplete="off">
+    <label for="nameIn">Your TikTok name</label>
+    <div><input id="nameIn" type="text" placeholder="@yourname" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"><button type="submit">GO</button></div>
+    <small>or tap anywhere else to just test</small>
+  </form>
+</div>
+<div id="sndBadge" class="hidden">TAP FOR SOUND &#x1F50A;</div>
+<div id="fsHint" class="hidden">&#x26F6; Tap for full screen</div>
+<script src="yui.js"></script>
+</body>
+</html>
