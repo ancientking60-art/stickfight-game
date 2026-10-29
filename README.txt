@@ -16,6 +16,22 @@ LINK MODE (new): put your TikTok name in the game link, for example
  config.json, and without a name at all it runs in TEST MODE.
  clean=1 hides the test buttons and the small status text.
 
+PLAY ON IPHONE (Safari) - v10:
+ 1. Open the game link in SAFARI (not Chrome, not the TikTok/Instagram
+    in-app browser). The first open can take about 1 minute while the
+    free server wakes up - just wait.
+ 2. Tap  TAP TO START  (turns the sound on). Flip the silent switch on
+    the side of the iPhone OFF and turn the volume up.
+ 3. Full screen on iPhone = Home Screen app:
+    tap the Share button (square with an arrow pointing up, bottom bar)
+    -> scroll down -> "Add to Home Screen" -> Add.
+    On newer iOS it can be hidden: Share -> "More" / "..." / "View More"
+    -> "Add to Home Screen". (It only exists in Safari.)
+    Then open Stick War from the new icon - no address bar, full screen.
+ 4. TikTok: screen share with audio, do not switch apps while live.
+ Comment white or 1 = WHITE team, black or 2 = BLACK team.
+ If something breaks, a tiny red line at the bottom shows the reason.
+
 PLAY FROM YOUR PHONE (TikTok "Mobile Gaming" screen share) - v9:
  1. Open your game link in Chrome on the phone, for example
       https://stickfight-game-hpug.onrender.com/?user=YOURNAME&clean=1

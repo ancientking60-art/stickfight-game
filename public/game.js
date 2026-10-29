@@ -11,6 +11,7 @@ let BASE_S = 0.66;     // fighter size - config.json game.fighterSize
 let GIANT_S = 1.6;
 const DMG_SCALE = 1.6; // global damage tuning (config "damage" multiplies this)
 const QS = new URLSearchParams(location.search);
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const MANUAL = QS.has('manual');
 const USER = String(QS.get('user') || '').trim().replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 30); // TikTok name from the link
 const UQ = USER ? '?user=' + encodeURIComponent(USER) : '';           // used for recording: time is stepped from outside
@@ -32,17 +33,27 @@ if (!VIEW.fixed) {
   // shadow blur is in screen pixels (not affected by the transform) - scale it like everything else
   Object.defineProperty(ctx, 'shadowBlur', { get() { return _shB.get.call(this) / VIEW.k; }, set(v) { _shB.set.call(this, v * VIEW.k); } });
 }
+// safe-area insets (iPhone notch / home bar in the Home Screen app), read from a CSS env() probe
+let _probe = null;
+function safeInsets() {
+  try {
+    if (!_probe) { _probe = document.createElement('div'); _probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.appendChild(_probe); }
+    const cs = getComputedStyle(_probe);
+    return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+  } catch (e) { return { t: 0, r: 0, b: 0, l: 0 }; }
+}
 function layoutView() {
   if (VIEW.fixed) { document.body.classList.add('fixed'); return; }
   const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
   let dpr = window.devicePixelRatio || 1;
-  const kFull = Math.min(vw / W, vh / H) * dpr;
+  const ins = safeInsets(), aw = Math.max(1, vw - ins.l - ins.r), ah = Math.max(1, vh - ins.t - ins.b);   // notch / home bar
+  const kFull = Math.min(aw / W, ah / H) * dpr;
   if (kFull > 1.5) dpr *= 1.5 / kFull;               // cap: never draw the game bigger than 1620x2880 (keeps phones fast)
   const cw = Math.round(vw * dpr), ch = Math.round(vh * dpr);
-  let k = Math.min(cw / W, ch / H);
+  let k = Math.min(aw * dpr / W, ah * dpr / H);
   if (k > 1 && k < 1.02) k = 1;                        // ~1080-pixel-wide phones: exact 1:1 pixels, no resampling at all
   VIEW.k = k; VIEW.gw = Math.round(W * k); VIEW.gh = Math.round(H * k);
-  VIEW.ox = Math.floor((cw - VIEW.gw) / 2); VIEW.oy = Math.floor((ch - VIEW.gh) / 2);
+  VIEW.ox = Math.floor(ins.l * dpr + (aw * dpr - VIEW.gw) / 2); VIEW.oy = Math.floor(ins.t * dpr + (ah * dpr - VIEW.gh) / 2);
   if (cv.width !== cw) cv.width = cw;
   if (cv.height !== ch) cv.height = ch;
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
@@ -120,9 +131,18 @@ function loadSamples() {
   SB.ready = (async () => {
     try {
       const man = await (await fetch('sounds/sounds.json')).json();
-      const dc = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100);
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      const dc = new OAC(1, 1, 44100);
+      // iPhone Safari can't decode Ogg Vorbis -> every sound also exists as AAC (.m4a)
+      const fmt = soundFormat();
+      const dec = (ab) => new Promise((res, rej) => { const r = dc.decodeAudioData(ab, res, rej); if (r && r.then) r.then(res, rej); });
+      const load = async (fn) => { const ab = await (await fetch('sounds/' + fn)).arrayBuffer(); return dec(ab); };
       await Promise.all(Object.entries(man).map(async ([g, list]) => {
-        const got = await Promise.all(list.map(async (fn) => { try { const ab = await (await fetch('sounds/' + fn)).arrayBuffer(); return await dc.decodeAudioData(ab); } catch (e) { return null; } }));
+        const got = await Promise.all(list.map(async (fn) => {
+          const alt = fn.replace(/\.ogg$/, '.m4a');
+          const first = fmt === 'm4a' ? alt : fn, second = first === fn ? alt : fn;
+          try { return await load(first); } catch (e) { try { return second !== first ? await load(second) : null; } catch (e2) { return null; } }
+        }));
         SB.buf[g] = got.filter(Boolean);
       }));
       SB.ok = !!(SB.buf.punch && SB.buf.punch.length);
@@ -131,6 +151,13 @@ function loadSamples() {
     return SB.ok;
   })();
   return SB.ready;
+}
+function soundFormat() {
+  try {
+    if (IS_IOS) return 'm4a';
+    const a = document.createElement('audio');
+    return a.canPlayType && a.canPlayType('audio/ogg; codecs="vorbis"') ? 'ogg' : 'm4a';
+  } catch (e) { return 'm4a'; }
 }
 // play one sample of a group: vol, rate, delay; +-6% pitch and +-15% volume random variation
 function smp(ac, out, t, g, vol = 1, rate = 1, vr = 0.06) {
@@ -206,7 +233,8 @@ function makeOut(ac) {
 function audioInit() {
   if (MANUAL) return;
   try {
-    if (!AU.ctx) { AU.ctx = new (window.AudioContext || window.webkitAudioContext)(); AU.out = makeOut(AU.ctx); }
+    if (!AU.ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; AU.ctx = new AC(); AU.out = makeOut(AU.ctx); }
+    iosAudioSession();
     if (AU.ctx.state !== 'running') { const r = AU.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
     if (!AU.unlocked) {   // play 1 silent sample inside the tap - some phones only unlock audio this way
       const b = AU.ctx.createBuffer(1, 1, 22050), s = AU.ctx.createBufferSource(); s.buffer = b; s.connect(AU.ctx.destination); s.start(0);
@@ -214,6 +242,16 @@ function audioInit() {
     }
     if (SB.ok) startWind(AU.ctx, AU.out, AU.ctx.currentTime, null);
   } catch (e) { AU.ctx = null; }
+}
+// iPhone: Web Audio is muted by the ring/silent switch unless the page plays 'media'. Newer iOS has
+// navigator.audioSession; older iOS needs a (silent, looping) <audio> element started inside the tap.
+function iosAudioSession() {
+  if (!IS_IOS) return;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try {
+    if (!AU.el) { AU.el = document.createElement('audio'); AU.el.src = 'sounds/silence.m4a'; AU.el.loop = true; AU.el.setAttribute('playsinline', ''); AU.el.volume = 0.01; }
+    if (AU.el.paused) { const r = AU.el.play(); if (r && r.catch) r.catch(() => {}); }
+  } catch (e) {}
 }
 function audioRunning() { return !!(AU.ctx && AU.ctx.state === 'running'); }
 function env(g, t, vol, dur, att) {
@@ -2296,6 +2334,7 @@ function fillBody(J, s, color, g = 0) {
 }
 // soft glow halo: silhouette drawn solid on an offscreen canvas, then blurred onto the scene (no seams at the joints)
 const GLC = document.createElement('canvas'); GLC.width = W; GLC.height = H; const glx = GLC.getContext('2d');
+const HAS_FILTER = (() => { try { return 'filter' in CanvasRenderingContext2D.prototype && !QS.has('nofilter'); } catch (e) { return false; } })();
 const GLOW_KEYS = ['head', 'neck', 'hip', 'eF', 'hF', 'eB', 'hB', 'kF', 'fF', 'kB', 'fB'];
 function glowPass(J, s, team, alpha) {
   const t = TEAMS[team], T = ctx.getTransform(), sc = Math.hypot(T.a, T.b);
@@ -2307,9 +2346,16 @@ function glowPass(J, s, team, alpha) {
   glx.setTransform(1, 0, 0, 1, 0, 0); glx.clearRect(x0, y0, x1 - x0, y1 - y0);
   glx.setTransform(T); DC = glx; fillBody(J, s, `rgb(${t.glow})`, 4.5 * s); DC = ctx;
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = alpha * (team === 0 ? 0.95 : 1); ctx.filter = `blur(${(blur * VIEW.k).toFixed(1)}px)`;
-  ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
-  if (team === 1) ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);   // red needs a 2nd pass to read on sand
+  ctx.globalAlpha = alpha * (team === 0 ? 0.95 : 1);
+  if (HAS_FILTER) {
+    ctx.filter = `blur(${(blur * VIEW.k).toFixed(1)}px)`;
+    ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+    if (team === 1) ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);   // red needs a 2nd pass to read on sand
+  } else {   // draw the silhouette far off-screen and keep only its blurred shadow
+    const off = 20000, kk = VIEW.fixed ? 1 : VIEW.k;
+    ctx.shadowColor = `rgb(${t.glow})`; ctx.shadowBlur = blur * 2; ctx.shadowOffsetX = off * kk;
+    for (let i = 0; i < (team === 1 ? 2 : 1); i++) ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0 - off, y0, x1 - x0, y1 - y0);
+  }
   ctx.restore();
 }
 function drawBody(J, team, s, flash, alpha = 1) {
@@ -3186,7 +3232,7 @@ const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) 
 const IS_APP = (window.matchMedia && matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches) || navigator.standalone === true;
 const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 function goFullscreen() {
-  if (isFull() || IS_APP) return;
+  if (isFull() || IS_APP || IS_IOS) return;   // iPhone Safari has no page full screen -> Home Screen app instead
   const el = document.documentElement, rq = el.requestFullscreen || el.webkitRequestFullscreen;
   if (!rq) return;
   try {
@@ -3198,7 +3244,7 @@ function lockPortrait() { try { const o = screen.orientation; if (o && o.lock) o
 function startSound() {
   audioInit();
   const ping = () => { if (audioRunning() && AU.on) { const k = AU.ctx.currentTime; tn(AU.ctx, AU.out, k + 0.02, 'triangle', 660, 660, 0.12, 0.18); tn(AU.ctx, AU.out, k + 0.14, 'triangle', 990, 990, 0.2, 0.18); } };
-  if (AU.ctx) AU.ctx.resume().then(ping, () => {}); 
+  try { if (AU.ctx) { const r = AU.ctx.resume(); if (r && r.then) r.then(ping, () => {}); else ping(); } } catch (e) {}
 }
 function setupStart() {
   const tap = document.getElementById('tap'), hint = document.getElementById('fsHint');
@@ -3210,6 +3256,10 @@ function setupStart() {
     startSound(); goFullscreen(); hide(); started = true;
   };
   tap.addEventListener('click', start);
+  if (IS_IOS) {
+    const t2 = tap.querySelector('.t2');
+    if (t2) t2.innerHTML = IS_APP ? 'turns on sound' : 'turns on sound<br><span class="ios">Full screen on iPhone: tap Share <b>&#x2191;</b> then <b>Add to Home Screen</b> and open Stick War from the new icon</span>';
+  }
   // phones always get the overlay (sound + full screen need a tap). On a PC it only shows if the browser blocked the sound;
   // in a PC LIVE Studio/OBS browser source (?clean) it never blocks the picture for more than 8 s.
   setTimeout(() => {
@@ -3220,7 +3270,7 @@ function setupStart() {
   }, 350);
   // left full screen (back button / swipe)? show a small hint; any tap goes full screen again
   const onFs = () => {
-    const show = started && IS_TOUCH && !IS_APP && !isFull();
+    const show = started && IS_TOUCH && !IS_APP && !IS_IOS && !isFull();
     hint.classList.toggle('hidden', !show);
   };
   document.addEventListener('fullscreenchange', onFs); document.addEventListener('webkitfullscreenchange', onFs);
@@ -3228,7 +3278,14 @@ function setupStart() {
     if (!hint.classList.contains('hidden') && !e.target.closest('#sim')) { goFullscreen(); if (!audioRunning()) startSound(); }
   });
   // coming back to the tab: wake the sound up again
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && AU.ctx && AU.ctx.state !== 'running') AU.ctx.resume().catch(() => {}); });
+  const wake = () => { if (!document.hidden && AU.ctx && AU.ctx.state !== 'running') { try { const r = AU.ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch (e) {} } };
+  document.addEventListener('visibilitychange', wake); window.addEventListener('pageshow', wake);
+}
+
+// service worker: only so Android can install the game as an app. Network only, never a stale copy.
+function registerSW() {
+  if (MANUAL || location.protocol !== 'https:' || !('serviceWorker' in navigator)) return;
+  try { const r = navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }); if (r && r.then) r.then((reg) => { try { reg.update(); } catch (e) {} }, () => {}); } catch (e) {}
 }
 
 // ============================================================ websocket to server.js
@@ -3243,10 +3300,21 @@ function connectWS() {
 // ============================================================ boot
 let lastT = 0;
 function frame(now) {
+  requestAnimationFrame(frame);   // schedule first: an error below can never stop the game
   const rdt = Math.min(0.05, (now - lastT) / 1000 || 0.016); lastT = now;
-  tick(rdt); render(); paintBars();
-  requestAnimationFrame(frame);
+  try { tick(rdt); } catch (e) { showErr('tick', e); }
+  try { render(); paintBars(); } catch (e) { showErr('draw', e); try { ctx.restore(); ctx.globalAlpha = 1; ctx.filter = 'none'; } catch (e2) {} }
 }
+// tiny visible error line (bottom-left) so a problem on a phone can be seen and reported
+const ERRS = {};
+function showErr(where, e) {
+  const msg = where + ': ' + ((e && (e.message || e.reason || e)) || 'error');
+  console.error(msg, e);
+  if (ERRS[msg]) return; ERRS[msg] = 1;
+  if (typeof window.__sfErr === 'function') window.__sfErr(msg);
+}
+function safe(where, fn) { try { const r = fn(); if (r && r.catch) r.catch((e) => showErr(where, e)); return r; } catch (e) { showErr(where, e); } }
+const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
 async function boot() {
   try {
     const r = await fetch('/settings.json' + UQ, { cache: 'no-store' });
@@ -3260,17 +3328,19 @@ async function boot() {
   if (QS.has('round')) S.game.roundSeconds = +QS.get('round');
   if (QS.has('hp')) S.game.heroHp = +QS.get('hp');
   BASE_S = clamp(+S.game.fighterSize || 0.66, 0.4, 1.2); GIANT_S = BASE_S * 2.4;
-  try { await Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('20px Russo')]); } catch (e) {}
-  drawBackground();
-  layoutView();
-  for (const ev of ['resize', 'orientationchange', 'fullscreenchange', 'webkitfullscreenchange']) window.addEventListener(ev, () => setTimeout(layoutView, 60));
-  if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(layoutView, 60));
-  setupPanel(); updateLiveInfo(); connectWS();
-  loadSamples();
-  audioInit();   // works right away if the browser allows autoplay, otherwise after the first click/key
-  setupStart();
-  if (!MANUAL && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
-  startRound();
+  // fonts: never wait more than 3 s (a slow or failed font must not keep the game from starting)
+  try { if (document.fonts && document.fonts.load) await withTimeout(Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('20px Russo')]), 3000); } catch (e) {}
+  safe('background', drawBackground);
+  safe('layout', layoutView);
+  const relayout = () => setTimeout(() => safe('layout', layoutView), 60);
+  for (const ev of ['resize', 'orientationchange', 'fullscreenchange', 'webkitfullscreenchange']) window.addEventListener(ev, relayout);
+  if (window.visualViewport) visualViewport.addEventListener('resize', relayout);
+  safe('panel', setupPanel); safe('live', updateLiveInfo); safe('ws', connectWS);
+  safe('sound', loadSamples);
+  safe('sound', audioInit);   // works right away if the browser allows autoplay, otherwise after the first tap/key
+  safe('start', setupStart);
+  safe('sw', registerSW);
+  safe('round', startRound);
   window.SF = {
     step: (n = 1, fps = 30) => { for (let i = 0; i < n; i++) tick(1 / fps); render(); },
     event: onEvent, round, fighters: () => fighters, heroes, supporters, sim, simGift, simJoin, simLikes, fakeFan, renderAudio, audioLog: () => AU.log.length,
@@ -3280,4 +3350,4 @@ async function boot() {
   };
   if (!MANUAL) requestAnimationFrame((t) => { lastT = t; frame(t); });
 }
-boot();
+boot().catch((e) => showErr('boot', e));

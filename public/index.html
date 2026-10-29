@@ -10,9 +10,23 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stick War">
 <link id="mf" rel="manifest" href="manifest.webmanifest">
+<script>
+  // tiny visible error line: if anything breaks (even a script the browser can't read) it shows at the bottom
+  (function () {
+    var shown = 0;
+    window.__sfErr = function (msg) {
+      if (shown++ > 3) return;
+      var el = document.getElementById('errLine');
+      if (!el) { el = document.createElement('div'); el.id = 'errLine'; (document.body || document.documentElement).appendChild(el); }
+      el.textContent = '! ' + String(msg).slice(0, 160);
+    };
+    window.addEventListener('error', function (e) { if (e && e.message) window.__sfErr(e.message + (e.filename ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')' : '')); });
+    window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; window.__sfErr('promise: ' + (r && r.message ? r.message : r)); });
+  })();
+</script>
 <script>document.getElementById('mf').href = '/manifest.webmanifest' + location.search;</script>
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <link rel="preload" href="fonts/Bangers-Regular.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="preload" href="fonts/RussoOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
 <style>
@@ -20,13 +34,13 @@
   @font-face { font-family: 'Russo'; src: url('fonts/RussoOne-Regular.ttf'); }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: 'Russo', Arial, sans-serif;
                touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-  #wrap { position: fixed; inset: 0; }
+  #wrap { position: fixed; left: 0; top: 0; right: 0; bottom: 0; }
   /* the canvas fills the whole screen; game.js sizes it in real screen pixels so it stays sharp */
   canvas { background: #05060d; display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
   /* recording mode (?manual) keeps the old fixed 1080x1920 canvas */
   body.fixed #wrap { display: flex; align-items: center; justify-content: center; }
   body.fixed canvas { position: static; height: 100vh; width: calc(100vh * 9 / 16); max-width: 100vw; max-height: calc(100vw * 16 / 9); }
-  #tap { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; flex-direction: column;
+  #tap { position: fixed; left: 0; top: 0; right: 0; bottom: 0; padding: env(safe-area-inset-top) 4vw env(safe-area-inset-bottom); z-index: 20; display: flex; align-items: center; justify-content: center; flex-direction: column;
          background: radial-gradient(ellipse at center, rgba(20,10,30,.55), rgba(0,0,0,.88)); cursor: pointer; text-align: center; }
   #tap .t1 { font: 15vmin/1 'Bangers', Impact, sans-serif; letter-spacing: .04em; color: #fff;
              text-shadow: 0 0 .25em #ff8a3d, 0 .06em 0 #000; animation: pulse 1.2s ease-in-out infinite; }
@@ -37,7 +51,11 @@
   #fsHint { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 15;
             background: rgba(0,0,0,.72); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 999px;
             padding: 8px 16px; font: 13px 'Russo', Arial, sans-serif; white-space: nowrap; cursor: pointer; }
+  #tap .ios { display: block; margin: 5vmin auto 0; max-width: 80vw; font: 3.6vmin/1.45 'Russo', Arial, sans-serif; color: #fff; opacity: .85; }
+  #tap .ios b { color: #ffd84a; }
   #tap.hidden, #fsHint.hidden { display: none; }
+  #errLine { position: fixed; left: 4px; bottom: calc(2px + env(safe-area-inset-bottom)); z-index: 30; max-width: 96vw; overflow: hidden; white-space: nowrap;
+             text-overflow: ellipsis; font: 10px/1.3 monospace; color: #ff8080; background: rgba(0,0,0,.6); padding: 1px 4px; pointer-events: none; }
   #sim { position: fixed; top: 8px; right: 8px; width: 230px; max-height: calc(100vh - 16px); overflow-y: auto;
          background: rgba(10,14,30,.92); border: 1px solid #2a6cff; border-radius: 10px; padding: 8px; color: #dfe8ff; font-size: 12px; z-index: 5;
          box-shadow: 0 0 18px rgba(40,120,255,.35); }
