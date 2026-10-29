@@ -198,9 +198,15 @@ function startWind(ac, out, t, dur) {
   const s = ac.createBufferSource(); s.buffer = L[0]; s.loop = true;
   const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.2 * (S.game.ambience ?? 1), t + 1.5);
   s.connect(g); g.connect(out); s.start(t); if (dur) s.stop(t + dur);
+  const R = SB.buf.rain; if (R && R.length && S.game.weather !== false && !QS.has('noweather')) {   // soft rain bed under the fight
+    const rs = ac.createBufferSource(); rs.buffer = R[0]; rs.loop = true;
+    const rg = ac.createGain(); rg.gain.setValueAtTime(0.0001, t); rg.gain.linearRampToValueAtTime(0.32, t + 2); ac._rainG = rg;
+    rs.connect(rg); rg.connect(out); rs.start(t); if (dur) rs.stop(t + dur);
+  }
 }
 // sound kind -> real sample layers. (p = voice pitch for shouts)
 const SMAP = {
+  thunder: (a, o, t, p) => smp(a, o, t, 'thunder', 0.75 * (p || 1), 1, 0.08),
   step: (a, o, t) => smp(a, o, t, 'step', 0.4),
   jump: (a, o, t) => { smp(a, o, t, 'step', 0.55, 0.9); smp(a, o, t, 'whoosh', 0.25, 0.8); },
   land: (a, o, t) => { smp(a, o, t, 'step', 0.6, 0.85); smp(a, o, t, 'fall', 0.35, 1.2); },
@@ -255,7 +261,8 @@ function makeOut(ac) {
   const pre = ac.createGain(); pre.gain.value = 0.72 * (S.game.volume ?? 0.8) / 0.8;
   const post = ac.createGain(); post.gain.value = 1.25;
   pre.connect(comp); comp.connect(post); post.connect(ac.destination);
-  return pre;
+  const duck = ac.createGain(); duck.connect(pre); ac._vo = pre; ac._duck = duck;   // sfx/ambience go through 'duck' so voice lines sit on top
+  return duck;
 }
 function audioInit() {
   if (MANUAL) return;
@@ -307,7 +314,15 @@ function vox(ac, out, t, f0, f1, dur, vol, form) {
   for (const [ff, q, gv] of form) { const b = ac.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = ff; b.Q.value = q; const bg = ac.createGain(); bg.gain.value = gv; g.connect(b); b.connect(bg); bg.connect(out); }
   o.start(t); o.stop(t + dur + 0.05); vib.start(t); vib.stop(t + dur + 0.05);
 }
+function playVO(ac, master, t, k, v) {   // pre-rendered voice line (edge-tts neural voice), ducks the fight sfx while speaking
+  const L = SB.buf[k]; if (!L || !L.length) return;
+  if (ac._voSrc) { try { ac._voSrc.stop(Math.max(0, t)); } catch (e) {} }   // a new line always cuts the old one: voices never overlap
+  const s = ac.createBufferSource(); s.buffer = L[0]; ac._voSrc = s;
+  const g = ac.createGain(); g.gain.value = 1.2 * v; s.connect(g); g.connect(ac._vo || master); s.start(Math.max(0, t));
+  if (ac._duck) { const d = ac._duck.gain; d.setTargetAtTime(0.5, t, 0.04); d.setTargetAtTime(1, t + L[0].duration, 0.18); }
+}
 function voice(ac, master, t, kind, v, x, p = 1) {
+  if (kind.startsWith('vo_')) { playVO(ac, master, t, kind, v); return; }
   let out = master;
   if (x != null && ac.createStereoPanner) { const pn = ac.createStereoPanner(); pn.pan.value = clamp((x / W) * 2 - 1, -1, 1) * 0.6; pn.connect(master); out = pn; }
   if (v !== 1) { const g = ac.createGain(); g.gain.value = v; g.connect(out); out = g; }
@@ -1964,7 +1979,7 @@ function spawnHeroes() {
 }
 function startRound() {
   round.n++; round.state = 'countdown'; round.t = 0; round.time = 0; round.winner = -1; round.mvp = null;
-  round.sudden = false; round.sdT = 0; round.beeps = 0; round.mur = -1; round.bowed = false; round.taunted = false; round.replied = false; round.tauntA = null;
+  round.sudden = false; round.sdT = 0; round.beeps = 0; round.mur = -1; round.bowed = false; round.taunted = false; round.replied = false; round.tauntA = null; round.ttNext = false; TT.queued = null; TT.seq.length = 0; TT.next = clock + 4;
   bubbles.length = 0;
   endSetPiece(); GT.length = 0; duel.want = null; fx.tintT = 0; duel.spT = rand(3.5, 6); duel.lastAtk = -1; cam.ko = null;
   bullets.length = 0; bombs.length = 0; planes.length = 0; strikeQueue.length = 0;
@@ -1985,7 +2000,7 @@ function endRound(w) {
     const fan = topSupporters(w, 1)[0];
     round.mvp = { kills: heroes[w] ? heroes[w].kills : 0, fan: fan ? fan.nick : '', flawless: !!(heroes[w] && heroes[w].hp >= heroes[w].maxHp - 0.5) };
     confetti(160, [TEAMS[w].ui, '#ffd84a', '#7fb2ff', '#ffffff']);
-    if (heroes[w]) bubble(heroes[w], pick(['EZ!', 'TOO EASY!', "WHO'S NEXT?", 'GG!', 'BOW DOWN!']), '👑', { force: true, pri: 9, dur: 2.6 });
+    if (heroes[w]) { bubble(heroes[w], pick(['EZ!', 'TOO EASY!', "WHO'S NEXT?", 'GG!', 'BOW DOWN!']), '👑', { force: true, pri: 9, dur: 2.6 }); VOS.until = 0; sayVO(heroes[w], 'win'); }
     addFeed([['TEAM ' + TEAMS[w].name, TEAMS[w].ui], [' WINS ROUND ' + round.n, '#ffd84a']], 10);
   } else callout('DRAW!', 'NOBODY SURVIVED', '#ffd84a', 150, 2);
   sfx('fanfare'); sfx('crowd');
@@ -2069,6 +2084,7 @@ function heal(team, amount, nick) {
   const got = Math.round(h.hp - before);
   if (got <= 0) { floatText(h.x, h.y - 230 * h.s, 'MAX SHIELD', '#7fe8ff', 24, 0.7); return 0; }
   healFx(h);
+  try { checkComeback(h, before, got, nick); } catch (e) {}
   floatText(h.x + rand(-50, 50), h.y - 235 * h.s - rand(0, 30), `+${got} HP @${nick}`, '#4dff88', 28, 1.3);
   if (before <= h.maxHp && h.hp > h.maxHp) { ring(h.x, h.cy(), 110 * h.s + 40, '#7fe8ff', 0.5, 8); floatText(h.x, h.y - 290 * h.s, 'SHIELD!', '#7fe8ff', 32, 1); }
   sfx('heal', h.x, got >= 20 ? 1 : 0.6);
@@ -2099,7 +2115,8 @@ function gift(ev) {
 function applyGift(s, info, count, label, quiet = false) {
   const team = s.team, col = TEAMS[team].fan, h = heroOf(team);
   const got = heal(team, info.heal * count, s.nick);
-  if (!quiet && !info.power && got > 0 && h && Math.random() < 0.6) bubble(h, 'THANKS @' + shortNick(s.nick) + '!', '💚', { pri: 4, dur: 1.5 });
+  if (!quiet) ttGift(team, label.replace(/ x\d+$/, ''));
+  if (!quiet && !info.power && got > 0 && h && Math.random() < 0.6) bubble(h, Math.random() < 0.5 ? '@' + shortNick(s.nick) + ' THANK YOU!' : 'THANKS @' + shortNick(s.nick) + '!', pick(['💚', '🔥']), { pri: 4, dur: 1.6 });
   if (info.power) {
     if (h) applyPower(h, info.power, count, s);
     else { s.pending.push({ info: { heal: 0, power: info.power }, count, label }); if (!quiet) addFeed([[s.nick, col], [' ' + POWER_TEXT[info.power] + ' saved for next round', '#bbc']]); return; }
@@ -2407,6 +2424,30 @@ function drawFace(f) {
   ctx.strokeStyle = t.eye; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(1.6, hr * 0.17);
   if (f.team === 1) { ctx.shadowColor = 'rgba(255,40,20,0.95)'; ctx.shadowBlur = 6 * s / 0.66; }
   const y = -hr * 0.06, eyes = [hr * 0.08, hr * 0.5], w = hr * 0.16;
+  // v14 expressions: comeback = fierce glowing eyes, winning = smug grin, losing = worried eyes + tears/sweat/breath
+  const foe = heroOf(1 - f.team), r = f.hp / f.maxHp, fr = foe ? foe.hp / foe.maxHp : 1;
+  const mood = f.cbT > 0 ? 'fierce' : hurt ? 'hurt' : (round.state === 'end' && round.winner === f.team) || (foe && r > fr + 0.2) ? 'smug' : (r < 0.38 && r < fr - 0.08) ? 'sad' : 'angry';
+  if (mood === 'fierce') {
+    ctx.strokeStyle = f.team ? '#ffdd55' : '#7fe8ff'; ctx.shadowColor = f.team ? 'rgba(255,200,40,1)' : 'rgba(120,230,255,1)'; ctx.shadowBlur = 16 * s / 0.66; ctx.lineWidth = Math.max(2.4, hr * 0.26);
+    eyes.forEach((cx, i) => { ctx.beginPath(); if (i === 0) { ctx.moveTo(cx - w * 1.2, y - w * 0.8); ctx.lineTo(cx + w * 1.1, y + w * 0.35); } else { ctx.moveTo(cx - w * 1.1, y + w * 0.35); ctx.lineTo(cx + w * 1.2, y - w * 0.8); } ctx.stroke(); });
+    ctx.restore(); return;
+  }
+  if (mood === 'smug') {   // half-closed lids + one-sided grin
+    eyes.forEach((cx) => { ctx.beginPath(); ctx.moveTo(cx - w, y); ctx.lineTo(cx + w, y); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, y, w * 0.75, 0, PI); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(hr * 0.06, hr * 0.42); ctx.quadraticCurveTo(hr * 0.32, hr * 0.62, hr * 0.62, hr * 0.3); ctx.stroke();
+    ctx.restore(); return;
+  }
+  if (mood === 'sad') {   // worried slant (inner ends up), frown, tear + sweat drop, heavy breath puffs
+    eyes.forEach((cx, i) => { ctx.beginPath(); if (i === 0) { ctx.moveTo(cx - w, y + w * 0.1); ctx.lineTo(cx + w, y - w * 0.6); } else { ctx.moveTo(cx - w, y - w * 0.6); ctx.lineTo(cx + w, y + w * 0.1); } ctx.stroke(); });
+    ctx.beginPath(); ctx.arc(hr * 0.3, hr * 0.62, hr * 0.2, PI * 1.15, PI * 1.85); ctx.stroke();
+    ctx.shadowBlur = 0;
+    const tp = (clock * 1.3) % 1;   // tear rolling down
+    ctx.fillStyle = 'rgba(120,200,255,0.95)'; ctx.beginPath(); ctx.ellipse(hr * 0.5, y + w + tp * hr * 0.7, hr * 0.07, hr * 0.11, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(150,215,255,0.9)'; ctx.beginPath(); ctx.moveTo(-hr * 0.55, -hr * 0.75); ctx.quadraticCurveTo(-hr * 0.42, -hr * 0.45, -hr * 0.55, -hr * 0.4); ctx.quadraticCurveTo(-hr * 0.68, -hr * 0.45, -hr * 0.55, -hr * 0.75); ctx.fill();
+    const bp = (clock * 1.6) % 1;   // breath puff
+    if (bp < 0.6) { ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - bp / 0.6)})`; ctx.beginPath(); ctx.arc(hr * (0.95 + bp * 0.6), hr * 0.55, hr * (0.12 + bp * 0.2), 0, TAU); ctx.fill(); }
+    ctx.restore(); return;
+  }
   eyes.forEach((cx, i) => {
     ctx.beginPath();
     if (hurt) { const d = i ? -1 : 1; ctx.moveTo(cx - w * d, y - w * 0.8); ctx.lineTo(cx + w * d, y); ctx.lineTo(cx - w * d, y + w * 0.8); }
@@ -2679,6 +2720,160 @@ function bodyTaunt(f) {
   const [mv, lines, emo] = pick(TAUNTS);
   f.mv = null; f.play(mv); bubble(f, pick(lines), emo, { pri: 1, dur: 1.4 });
 }
+// ---------- v14: VOICE LINES (pre-rendered neural TTS clips, never overlapping) ----------
+const VOS = { until: 0 };
+function sayVO(h, key, v = 1) {
+  if (!h || S.game.voice === false || clock < VOS.until) return false;
+  const k = 'vo_' + (h.team ? 'b' : 'w') + '_' + key, b = SB.buf[k] && SB.buf[k][0];
+  if (!MANUAL && !b) return false;
+  VOS.until = clock + (b ? b.duration : 1.6) + 0.25;
+  sfx(k, null, v); return true;
+}
+// ---------- v14: COMEBACK - the losing hero gets a burst of fan support while low on HP
+function checkComeback(h, before, got, nick) {
+  const foe = heroOf(1 - h.team);
+  if (!foe || round.state !== 'fight' || before >= h.maxHp * 0.4) return;
+  if (clock - (h.cbT0 ?? -9) > 3) { h.cbAcc = 0; h.cbT0 = clock; }
+  h.cbAcc = (h.cbAcc || 0) + got;
+  if (h.cbAcc >= h.maxHp * 0.07 && clock > (h.cbCD || 0) && foe.hp / foe.maxHp > before / h.maxHp + 0.1) comeback(h, foe, nick);
+}
+function comeback(h, foe, nick) {
+  h.cbCD = clock + 25; h.cbT = 7; h.auraT = Math.max(h.auraT, 7);
+  teams[h.team].rageT = Math.max(teams[h.team].rageT, 7);   // faster + harder hits = the strong combo
+  h.invuln = Math.max(h.invuln, 0.8); h.combo = Math.max(h.combo || 0, 3);
+  slowmo(0.35, 0.9, true);
+  camFocusCU(() => h.x, () => (h.J ? h.J.head.y : h.y - 130 * h.s), 2.2, 1.0);
+  cam.flash = 0.45; cam.flashColor = h.team ? 'rgba(255,60,30,1)' : 'rgba(255,250,235,1)';
+  ring(h.x, h.cy(), 160 * h.s + 40, TEAMS[h.team].ui, 0.6, 12); ring(h.x, h.cy(), 90 * h.s + 20, '#ffd84a', 0.45, 8);
+  callout('COMEBACK!', nick ? 'POWERED BY @' + shortNick(nick) : 'THE FANS SAVED ' + TEAMS[h.team].name, TEAMS[h.team].ui, 120, 1.2);
+  sfx('powerup', h.x); sfx('crowd', null, 1);
+  WX.boost = 8; WX.nextBolt = Math.min(WX.nextBolt, clock + 0.4);
+  if (!h.busy() && h.onGround) HOLD(h, 'powerUp', 0.55, { tin: 0.12, tremble: true });
+  if (foe.alive && !foe.busy()) foe.play('shrug');
+  TT.queued = null;
+  TT.seq = [{ h, text: pick(["I'M NOT DONE YET!", 'THANKS FANS, NOW WATCH THIS!']), emo: '🔥', at: clock + 1.25, dur: 2.0, vo: null },
+            { h: foe, text: 'WHAT?!', emo: '😳', at: clock + 2.7, dur: 1.5, vo: 'shock' }];
+  TT.seq[0].vo = TT.seq[0].text.startsWith('THANKS') ? 'comeback2' : 'comeback';
+  VOS.until = 0; TT.next = clock + 6;
+}
+// ---------- v14: TRASH TALK that baits the audience into commenting / liking / gifting ----------
+// Playful, TikTok-safe lines only (no insults at real people). Each hero talks every 6-10 s at most,
+// trash talk waits until no fight-reaction bubble is showing, and bubbles stack so they never overlap.
+const TT = { next: 0, last: -1, queued: null, used: {}, seq: [] };
+function ttPick(key, list) {   // rotate: never the same line twice in a row per category
+  let i = Math.floor(Math.random() * list.length); if (list.length > 1 && i === TT.used[key]) i = (i + 1) % list.length; TT.used[key] = i; return list[i];
+}
+function ttSub(x, t, n) {
+  const o = 1 - t;
+  return x.replace(/\{T\}/g, TEAMS[t].name).replace(/\{O\}/g, TEAMS[o].name).replace(/\{N\}/g, String(t + 1)).replace(/\{ON\}/g, String(o + 1)).replace(/\{n\}/g, String(n));
+}
+function trashLine(h) {
+  const t = h.team, o = 1 - t, foe = heroOf(o);
+  const r = h.hp / h.maxHp, fr = foe ? foe.hp / foe.maxHp : 1;
+  const myFans = supportersOf(t).length, foeFans = supportersOf(o).length, top = topSupporters(t, 1)[0];
+  const sub = (x) => ttSub(x, t, foeFans);
+  // losing / low HP -> beg my fans
+  if (r < 0.45 && r < fr - 0.08) return [sub(ttPick('beg' + t, ['{T} FANS HELP ME!', "SEND A ROSE OR I'M DONE!", 'TAP LIKES = MY HP!', 'COMMENT {N} TO SAVE ME!', "{T} FANS, DON'T LEAVE ME!", 'ONE GIFT AND I WIN THIS!'])), pick(['😰', '🌹', '❤️', '🙏', '😭'])];
+  // winning -> brag at the other team's fans
+  if (r > fr + 0.15 || (foe && fr < 0.35)) return [sub(ttPick('brag' + t, ['{O} FANS, WHERE ARE YOU?', foeFans ? 'ONLY {n} FANS? EASY!' : '{O} HAS NO FANS? EASY!', 'COMMENT {ON} IF YOU DARE!', '{O} FANS ARE SLEEPING!', "SEND GIFTS, {O}... WON'T HELP!", 'TEAM {T} RUNS THIS LIVE!'])), pick(['😏', '😂', '💢', '😎', '🥱'])];
+  // fewer fans -> recruit
+  if (myFans < foeFans || myFans === 0) return [sub(ttPick('rec' + t, ['COMMENT {N} NOW!', 'I NEED FANS! COMMENT {N}!', 'TEAM {T}! COMMENT {N}!', 'TYPE {N} AND JOIN MY ARMY!'])), pick(['📣', '👊', '🔥', '💪'])];
+  // even fight -> shout-out the top fan or ask for likes
+  if (top && Math.random() < 0.4) return ['@' + shortNick(top.nick) + ' IS MY KING!', '👑'];
+  return [sub(ttPick('mid' + t, ['TAP LIKES = MY HP!', 'SPAM {N} IN THE CHAT!', 'ROSES MAKE ME STRONGER!', 'WHO IS TEAM {T}? COMMENT {N}!', '{O} IS GOING DOWN!'])), pick(['❤️', '🔥', '🌹', '💪', '😤'])];
+}
+// hero-vs-hero roast exchanges: [speaker team (-1 = either), line, emo, reply, emo]. {T}/{N} = the SPEAKER's team.
+// Replies use {R}/{RN} = the replier's team name / comment number. Most end in a call to action.
+const ROASTS = [
+  [0, 'YOU HIT LIKE A NOODLE!', '🍜', 'SAYS THE GLOWING LIGHTBULB!', '💡'],
+  [1, "I'LL TURN OFF YOUR LIGHT!", '😈', 'TRY IT, SHADOW BOY!', '😤'],
+  [0, 'YOUR FANS ARE SLEEPING!', '😴', 'MY FANS ARE LOADING GIFTS!', '🎁'],
+  [1, 'NOBODY LIKES WHITE!', '😂', 'COMMENT 1 AND PROVE HIM WRONG!', '📣'],
+  [0, 'NOBODY LIKES BLACK!', '😂', 'COMMENT 2 AND PROVE HIM WRONG!', '📣'],
+  [1, 'YOU LOOK LIKE A NAPKIN!', '🧻', 'AND YOU LOOK LIKE A POWER CUT!', '🔌'],
+  [0, 'GO BACK TO THE DARK!', '🌚', 'BLACK FANS, SHOW HIM! COMMENT 2!', '💢'],
+  [1, 'GO BACK TO THE LAUNDRY!', '🧺', 'WHITE FANS, SHOW HIM! COMMENT 1!', '💢'],
+  [-1, 'MY FANS > YOUR FANS!', '😎', 'PROVE IT! COMMENT {RN}!', '🔥'],
+  [-1, 'YOU MOVE LIKE A SNAIL!', '🐌', 'TAP LIKES AND WATCH ME FLY!', '❤️'],
+  [-1, "I'M THE KING OF THIS LIVE!", '👑', 'ONE ROSE AND YOUR CROWN IS MINE!', '🌹'],
+  [-1, 'YOU CANNOT BEAT ME!', '😏', 'TEAM {R}, SEND HEARTS NOW!', '❤️'],
+  [-1, 'TEAM {T} WINS EVERY TIME!', '🏆', 'NOT TODAY! COMMENT {RN}!', '😤'],
+  [-1, 'IS THAT YOUR BEST KICK?', '🥱', 'WAIT FOR MY FANS\' GIFTS!', '🎁'],
+  [-1, 'YOU NEED A NAP, BUDDY!', '😴', 'MY FANS ARE MY ENERGY! TAP LIKES!', '⚡'],
+  [-1, 'I EAT SNACKS LIKE YOU!', '🍿', 'TEAM {R}! LET\'S PROVE HIM WRONG!', '💪'],
+  [-1, 'SAY GOODBYE!', '👋', 'NOT WITHOUT MY FANS! COMMENT {RN}!', '📣'],
+  [-1, 'YOUR TEAM IS SO QUIET!', '🤫', 'TEAM {R}, MAKE SOME NOISE!', '📢'],
+  [-1, 'I AM FASTER THAN YOU!', '💨', 'AND I HAVE MORE FANS! TYPE {RN}!', '😎'],
+  [-1, 'YOU FIGHT LIKE A CHAIR!', '🪑', 'A CHAIR WITH ROSES! SEND ONE!', '🌹'],
+];
+// winning hero GLOATS at the losing hero: short bubbles one after another, then the loser rallies his fans
+const GLOAT = [['NO ONE HERE TO SAVE YOU', '😏'], ['PATHETIC!', '🥱'], ['CALL YOUR MAMA AND CRY', '😭'], ['MAYBE I GO EASY ON YOU', '😈']];
+const GLOAT_REPLY = ['FANS, SHOW HIM! COMMENT {RN}!', 'TEAM {R}! SEND ROSES NOW!', 'TAP LIKES! I\'M NOT DONE!'];
+function trashGloat(w) {
+  const l = heroOf(1 - w.team); if (!l) return false;
+  let t = clock; TT.seq = [];
+  const VO_G = ['gloat1', 'gloat2', 'gloat3', 'gloat4'], MV_G = ['taunt', 'chinWipe', 'shrug', 'taunt'];
+  GLOAT.forEach(([text, emo], i) => { TT.seq.push({ h: w, text, emo, at: t, dur: 1.75, vo: VO_G[i], mv: MV_G[i] }); t += i === 2 ? 1.9 : 1.6; });
+  const r = ttPick('gr', GLOAT_REPLY).replace(/\{R\}/g, TEAMS[l.team].name).replace(/\{RN\}/g, String(l.team + 1));
+  TT.seq.push({ h: l, text: r, emo: pick(['📣', '😤', '💢']), at: t - 0.3, dur: 2.4, vo: r.startsWith('FANS') ? 'rally' : null });
+  w.ttNext = clock + 14; l.ttNext = clock + 10; TT.next = t + 4; TT.last = w.team; TT.queued = null;
+  return true;
+}
+function trashExchange(a) {
+  const b = heroOf(1 - a.team); if (!b) return false;
+  const list = ROASTS.filter((x) => x[0] < 0 || x[0] === a.team);
+  const x = list[(() => { let i = Math.floor(Math.random() * list.length); if (list.length > 1 && i === TT.used['ex' + a.team]) i = (i + 1) % list.length; TT.used['ex' + a.team] = i; return i; })()];
+  const rsub = (s_) => ttSub(s_, a.team, 0).replace(/\{R\}/g, TEAMS[b.team].name).replace(/\{RN\}/g, String(b.team + 1));
+  ttSay(a, rsub(x[1]), x[2], { dur: 2.6, force: true });
+  TT.queued = { h: b, text: rsub(x[3]), emo: x[4], at: clock + rand(1.5, 2.0), reply: true, dur: 2.6 };
+  TT.next = clock + rand(5, 6.5);
+  return true;
+}
+const ttFree = (h) => !bubbles.some((b) => b.f.alive && b.t < b.dur && (!h || b.f === h));
+function ttSay(h, line, emo, o = {}) {
+  if (!h || !h.alive) return false;
+  bubble(h, line, emo, { pri: o.pri || 2, dur: o.dur || 2.2, force: !!o.force, cd: 2.4 });
+  h.ttNext = clock + rand(6, 10); TT.next = Math.max(TT.next, clock + rand(3, 4.5)); TT.last = h.team;
+  return true;
+}
+function trashTalk() {
+  if (G_().trashTalk === false) return;
+  // a queued reply / gift taunt goes first (a reply only needs ITS speaker to be free; bubbles stack, never overlap)
+  if (TT.seq.length) {   // gloat chain in progress
+    const q = TT.seq[0];
+    if (!q.h.alive || round.state !== 'fight') { TT.seq.length = 0; return; }
+    if (clock >= q.at) { TT.seq.shift(); bubble(q.h, q.text, q.emo, { pri: q.vo === 'comeback' || q.vo === 'comeback2' || q.vo === 'shock' ? 8 : 3, dur: q.dur, force: true }); if (q.vo) sayVO(q.h, q.vo); if (q.mv && !q.h.busy()) q.h.play(q.mv); }
+    return;
+  }
+  if (TT.queued && clock >= TT.queued.at) {
+    const q = TT.queued;
+    if (clock > q.at + 4 || !q.h.alive) TT.queued = null;
+    else if (ttFree(q.reply ? q.h : null)) { TT.queued = null; bubble(q.h, q.text, q.emo, { pri: 3, dur: q.dur || 2.2, force: true }); q.h.ttNext = clock + rand(6, 10); TT.next = Math.max(TT.next, clock + 3.5); return; }
+  }
+  if (TT.queued || clock < TT.next || !ttFree() || duel.sp) return;
+  if (round.state === 'end') {
+    if (round.t > 3.2 && !round.ttNext) { round.ttNext = true; const w = heroOf(round.winner) || heroes.find((h) => h && h.alive); if (w) ttSay(w, ttPick('next', ['WHO WANTS NEXT ROUND?', 'NEXT ROUND! COMMENT 1 OR 2!', 'PICK A SIDE! 1 OR 2!']), '🔥', { dur: 2.4 }); }
+    return;
+  }
+  if (round.state !== 'fight' || round.t < 3) return;
+  const cand = [0, 1].map(heroOf).filter((h) => h && clock >= (h.ttNext || 0) && !h.busy());
+  if (!cand.length) return;
+  const h = cand.length > 1 ? (cand.find((c) => c.team !== TT.last) || cand[0]) : cand[0];
+  const f_ = heroOf(1 - h.team);
+  if (f_ && h.hp / h.maxHp > f_.hp / f_.maxHp + 0.2 && Math.random() < 0.4 && trashGloat(h)) return;   // winner gloats (4 short bubbles) -> loser rallies
+  if (cand.length > 1 && Math.random() < 0.5 && trashExchange(h)) return;   // hero-vs-hero roast + reply   // hero-vs-hero roast + reply
+  const [line, emo] = trashLine(h);
+  ttSay(h, line, emo);
+  if (/FANS HELP ME/.test(line)) sayVO(h, 'beg'); else if (/WHERE ARE YOU|FANS\? EASY/.test(line)) sayVO(h, 'brag');
+}
+// gift reaction: the OTHER hero mocks it a moment later (after the thank-you bubble)
+function ttGift(team, giftName) {
+  if (G_().trashTalk === false || round.state !== 'fight' || TT.queued) return;
+  const foe = heroOf(1 - team); if (!foe || Math.random() < 0.35) return;
+  const g = String(giftName || 'GIFT').split(/\s+/)[0].toUpperCase().slice(0, 10);
+  const text = ttPick('gift', [`THAT ${g} WON'T SAVE YOU!`, `A ${g}? I'M NOT SCARED!`, `${TEAMS[1 - team].name} FANS, SEND MORE!`, 'MY FANS WILL BEAT THAT!']);
+  TT.queued = { h: foe, text, emo: pick(['😤', '😏', '🙄', '💢']), at: clock + 1.9 };
+}
 function updateBubbles(rdt) {
   for (const b of bubbles) b.t += rdt;
   for (let i = bubbles.length - 1; i >= 0; i--) { const b = bubbles[i]; if (b.t > b.dur || (!b.f.alive && !b.f.rd) || (b.f.rd && b.f.rd.life <= 0)) bubbles.splice(i, 1); }
@@ -2700,15 +2895,17 @@ function drawBubbles() {
     ctx.font = `${Math.round(66 * zk)}px Bangers, Impact, sans-serif`;
     const tw = b.text ? ctx.measureText(b.text).width : 0, es = Math.round((b.text ? 96 : 140) * zk);
     const bw = b.text ? tw + 46 * zk : 0, bh = 92 * zk, gapE = b.text ? 10 * zk : 0;
-    const totW = bw + (b.emo ? es + gapE : 0);
-    let cx = head.x + side * (totW * 0.32 + 30), cy = head.y - 115 * zk - bh / 2;
+    const totW0 = bw + (b.emo ? es + gapE : 0), fit = Math.min(1, (W - 40) / Math.max(1, totW0 * Math.max(1, pop)));   // long lines shrink to fit the screen
+    const totW = totW0 * fit, bhS = bh * fit;
+    let cx = head.x + side * (totW * 0.32 + 30), cy = head.y - 115 * zk - bhS / 2;
     cx = clamp(cx, totW / 2 + 16, W - totW / 2 - 16);
-    cy = clamp(cy, VIEW_TOP + bh / 2 + 70, VIEW_BOT - 200);
-    for (const q of placed) if (Math.abs(q.x - cx) < (q.w + totW) / 2 + 8 && Math.abs(q.y - cy) < bh + 6) cy = q.y - bh - 14;   // stack instead of overlap
-    placed.push({ x: cx, y: cy, w: totW });
+    cy = clamp(cy, VIEW_TOP + bhS / 2 + 70, VIEW_BOT - 200);
+    for (const q of placed) if (Math.abs(q.x - cx) < (q.w + totW) / 2 + 8 && Math.abs(q.y - cy) < (q.h + bhS) / 2 + 6) cy = q.y - (q.h + bhS) / 2 - 18;   // stack instead of overlap
+    cy = Math.max(cy, VIEW_TOP + bhS / 2 + 20);
+    placed.push({ x: cx, y: cy, w: totW, h: bhS });
     const tcol = TEAMS[f.team].ui;
-    ctx.save(); ctx.globalAlpha = a; ctx.translate(cx, cy + (1 - a) * -20); ctx.scale(sc / zk, sc / zk);
-    const left = -totW / 2;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(cx, cy + (1 - a) * -20); ctx.scale(sc * fit / zk, sc * fit / zk);
+    const left = -totW0 / 2;
     if (b.text) {
       const bx = left + (side > 0 ? es + gapE : 0) * (b.emo ? 1 : 0), tailX = clamp(head.x - cx, bx + 30, bx + bw - 30);
       ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 7 * zk;
@@ -3088,6 +3285,90 @@ function w2s(x, y) {
   const V = cam.V, dx = (x - V.x) * V.z, dy = (y - V.y) * V.z, c = Math.cos(V.r), s = Math.sin(V.r);
   return { x: W / 2 + dx * c - dy * s, y: VIEW_CY + dx * s + dy * c };
 }
+// ============================================================ v14 WEATHER: storm clouds, rain, splashes, lightning + thunder
+// Lightweight: rain = one batched stroke per frame, splashes capped, storm clouds pre-rendered once.
+const WX = { on: !QS.has('noweather'), drops: [], spl: [], boost: 0, k: 0.6, nextBolt: 0, bolt: null, flash: 0, thunderAt: 0 };
+const scl = document.createElement('canvas'); scl.width = CLW; scl.height = Math.round(HZ * 0.75 + BGM);
+function buildStorm() {
+  WX.on = S.game.weather !== false && !QS.has('noweather');
+  const c = scl.getContext('2d'), r = seeded(777); c.translate(0, BGM);
+  for (let i = 0; i < 26; i++) {
+    const y = 180 + r() * (HZ * 0.75 - 380), x = r() * CLW, w = 380 + r() * 520, h = 60 + r() * 70;
+    for (const ox of [0, -CLW, CLW]) {
+      const cx = x + ox; if (cx < -w || cx > CLW + w) continue;
+      const g = c.createLinearGradient(0, y - h, 0, y + h);
+      g.addColorStop(0, 'rgba(34,22,48,0.85)'); g.addColorStop(0.7, 'rgba(52,30,60,0.78)'); g.addColorStop(1, 'rgba(150,60,70,0.55)');   // sunset glow on the underside
+      c.fillStyle = g;
+      for (let k = 0; k < 6; k++) { c.beginPath(); c.ellipse(cx + (k / 5 - 0.5) * w * 0.8, y + Math.sin(k * 1.7 + i) * h * 0.3, w * (0.2 + r() * 0.12), h * (0.55 + r() * 0.35), 0, 0, TAU); c.fill(); }
+    }
+  }
+}
+function updateWeather(rdt) {
+  if (!WX.on) return;
+  WX.boost = Math.max(0, WX.boost - rdt);
+  const target = WX.boost > 0 ? 1 : 0.6; WX.k += (target - WX.k) * Math.min(1, rdt * 1.5);
+  const n = Math.round(70 + 110 * WX.k);
+  while (WX.drops.length < n) WX.drops.push(newDrop(true));
+  if (WX.drops.length > n) WX.drops.length = n;
+  const gy = w2s(W / 2, FLOOR).y;
+  for (const d of WX.drops) {
+    d.x += d.vx * rdt; d.y += d.vy * rdt;
+    if (d.y >= d.gy || d.x < -40) {
+      if (d.gy < VIEW_BOT - 4 && d.gy > gy - 40 && WX.spl.length < 40 && Math.random() < 0.6) WX.spl.push({ x: d.x, y: d.gy, t: 0 });
+      Object.assign(d, newDrop(false));
+    }
+  }
+  for (const p of WX.spl) p.t += rdt;
+  WX.spl = WX.spl.filter((p) => p.t < 0.28);
+  // lightning
+  if (!WX.nextBolt) WX.nextBolt = clock + rand(6, 12);
+  if (clock >= WX.nextBolt) {
+    WX.nextBolt = clock + (WX.boost > 0 ? rand(2.5, 4.5) : rand(12, 24));
+    WX.flash = 1; WX.bolt = makeBolt(); WX.thunderAt = clock + rand(0.25, 0.9);
+  }
+  WX.flash = Math.max(0, WX.flash - rdt * 3.2);
+  if (WX.thunderAt && clock >= WX.thunderAt) { WX.thunderAt = 0; sfx('thunder', null, WX.boost > 0 ? 1 : 0.8); }
+  if (AU.ctx && AU.ctx._rainG) AU.ctx._rainG.gain.setTargetAtTime(0.22 + 0.25 * WX.k, AU.ctx.currentTime, 0.5);
+}
+function newDrop(any) {
+  const gy = w2s(W / 2, FLOOR).y;
+  return { x: rand(0, W + 260), y: any ? rand(VIEW_TOP, VIEW_BOT) : VIEW_TOP - rand(0, 120), vx: -260, vy: rand(1500, 1900), l: rand(26, 46), gy: rand(gy - 30, VIEW_BOT + 20) };
+}
+function makeBolt() {
+  const pts = []; let x = rand(120, W - 120), y = VIEW_TOP;
+  const end = VIEW_TOP + rand(260, 480);
+  while (y < end) { pts.push([x, y]); x += rand(-55, 55); y += rand(30, 70); }
+  pts.push([x, y]); return { pts, t: 0 };
+}
+function drawStormSky() {   // in the parallax transform, over the static sky + sunset clouds
+  if (!WX.on) return;
+  ctx.globalAlpha = 0.28 + 0.2 * WX.k; ctx.fillStyle = '#1a0f2a'; ctx.fillRect(-BGM, -BGM, W + BGM * 2, HZ + BGM - 260);   // darker top, horizon glow kept
+  ctx.globalAlpha = 0.55 + 0.35 * WX.k;
+  const d = (clock * 22) % CLW;
+  ctx.drawImage(scl, -BGM - d, -BGM); ctx.drawImage(scl, -BGM - d + CLW, -BGM);
+  ctx.globalAlpha = 1;
+}
+function drawRain() {   // screen space, clipped to the game window (never over the HUD)
+  if (!WX.on) return;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.beginPath(); ctx.rect(0, VIEW_TOP, W, VIEW_BOT - VIEW_TOP); ctx.clip();
+  if (WX.flash > 0) {
+    ctx.fillStyle = `rgba(215,225,255,${0.38 * WX.flash})`; ctx.fillRect(0, VIEW_TOP, W, VIEW_BOT - VIEW_TOP);
+    if (WX.bolt && WX.flash > 0.4) {
+      ctx.strokeStyle = `rgba(240,245,255,${WX.flash})`; ctx.lineWidth = 5; ctx.shadowColor = 'rgba(170,190,255,1)'; ctx.shadowBlur = 24;
+      ctx.beginPath(); WX.bolt.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.shadowBlur = 0;
+    }
+  }
+  ctx.strokeStyle = `rgba(205,215,255,${0.28 + 0.12 * WX.k})`; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (const d of WX.drops) { const k = d.l / d.vy; ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.vx * k, d.y - d.l); }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(225,230,255,0.55)'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const p of WX.spl) { const r = 4 + p.t * 60; ctx.moveTo(p.x + r, p.y); ctx.ellipse(p.x, p.y, r, r * 0.3, 0, 0, TAU); }
+  ctx.stroke();
+  ctx.restore();
+}
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -3098,6 +3379,7 @@ function render() {
   ctx.translate(W / 2, VIEW_CY); ctx.rotate(V.r); ctx.scale(zb, zb); ctx.translate(-xb, -yb);
   ctx.drawImage(bg, -BGM, -BGM);
   drawSkyLive();
+  drawStormSky();
   // world
   setWorld(V);
   drawArena();
@@ -3121,6 +3403,7 @@ function render() {
   }
   for (const p of planes) drawPlane(p);
   drawParticles();
+  drawRain();
   // screen space from here on
   drawOverlays();
   drawWorldUI();
@@ -3165,6 +3448,9 @@ function tick(rdt) {
   for (let i = feed.length - 1; i >= 0; i--) if (feed[i].life <= 0) feed.splice(i, 1);
   updateTexts(rdt);
   updateBubbles(rdt);
+  try { trashTalk(); } catch (e) {}
+  for (const h of heroes) if (h && h.cbT > 0) h.cbT -= rdt;
+  try { updateWeather(rdt); } catch (e) {}
   autoSim(rdt);
   updateCamera(rdt);
   // hit-stop: the action freezes for a few frames on heavy contact
@@ -3441,6 +3727,7 @@ async function boot() {
   // fonts: never wait more than 3 s (a slow or failed font must not keep the game from starting)
   try { if (document.fonts && document.fonts.load) await withTimeout(Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('20px Russo')]), 3000); } catch (e) {}
   safe('background', drawBackground);
+  safe('storm', buildStorm);
   safe('layout', layoutView);
   const relayout = () => setTimeout(() => safe('layout', layoutView), 60);
   for (const ev of ['resize', 'orientationchange', 'fullscreenchange', 'webkitfullscreenchange']) window.addEventListener(ev, relayout);
@@ -3457,8 +3744,15 @@ async function boot() {
     event: onEvent, round, fighters: () => fighters, heroes, supporters, sim, simGift, simJoin, simLikes, fakeFan, renderAudio, audioLog: () => AU.log.length,
     mostHurt: () => { let b = -1, bh = 1e9; for (let t = 0; t < NT; t++) { const h = heroOf(t); if (h && h.hp < bh) { bh = h.hp; b = t; } } return b; },
     sp: (name, first = 0, force = false) => { const a = heroOf(first), b = heroOf(1 - first); if (a && b && !duel.sp && round.state === 'fight' && [a, b].every((f) => f.onGround && !f.busy() && !f.held && f.invuln <= 0)) { const o = setPieceOptions2(a, b).find((c) => c.name === name); if (!o && !force) return false; startSetPiece(name, o && !force ? o.a : a, o && !force ? o.b : b); return true; } return false; },
-    cam, duel, timeCtl, ready: true, soundsReady: () => loadSamples(), bubble, audioLogAll: () => AU.log
+    cam, duel, timeCtl, ready: true, soundsReady: () => loadSamples(), bubble, audioLogAll: () => AU.log,
+    tt: { state: TT, exchange: (t = 0) => trashExchange(heroOf(t)), gloat: (t = 0) => trashGloat(heroOf(t)), line: (t = 0) => { const h = heroOf(t); if (!h) return null; const [l, e] = trashLine(h); ttSay(h, l, e, { force: true }); return l; }, roasts: ROASTS }
   };
+  if (QS.has('ttdemo')) {   // screenshot hook: fans + HP gap, then force trash talk
+    const mode = QS.get('ttdemo');
+    setTimeout(() => { for (let i = 0; i < 5; i++) simJoin(0); simJoin(1); }, 6000);
+    setTimeout(() => { const b = heroOf(1); if (b) b.hp = b.maxHp * 0.3; TT.next = 1e9; }, 9000);
+    setTimeout(() => { bubbles.length = 0; if (mode === 'ex') trashExchange(heroOf(1)); else if (mode === 'gloat') trashGloat(heroOf(0)); else if (mode === 'comeback') { for (let i = 0; i < 3; i++) simGift('Rose', 1, 1); } else if (mode === 'storm') { WX.boost = 8; WX.nextBolt = clock; } else { SF.tt.line(1); SF.tt.line(0); } }, 11500);
+  }
   if (!MANUAL) requestAnimationFrame((t) => { lastT = t; frame(t); });
 }
 boot().catch((e) => showErr('boot', e));

@@ -127,5 +127,78 @@
 ],
 "wind": [
 "wind_1.ogg"
+],
+"vo_b_beg": [
+"vo_b_beg.ogg"
+],
+"vo_b_brag": [
+"vo_b_brag.ogg"
+],
+"vo_b_comeback": [
+"vo_b_comeback.ogg"
+],
+"vo_b_comeback2": [
+"vo_b_comeback2.ogg"
+],
+"vo_b_gloat1": [
+"vo_b_gloat1.ogg"
+],
+"vo_b_gloat2": [
+"vo_b_gloat2.ogg"
+],
+"vo_b_gloat3": [
+"vo_b_gloat3.ogg"
+],
+"vo_b_gloat4": [
+"vo_b_gloat4.ogg"
+],
+"vo_b_rally": [
+"vo_b_rally.ogg"
+],
+"vo_b_shock": [
+"vo_b_shock.ogg"
+],
+"vo_b_win": [
+"vo_b_win.ogg"
+],
+"vo_w_beg": [
+"vo_w_beg.ogg"
+],
+"vo_w_brag": [
+"vo_w_brag.ogg"
+],
+"vo_w_comeback": [
+"vo_w_comeback.ogg"
+],
+"vo_w_comeback2": [
+"vo_w_comeback2.ogg"
+],
+"vo_w_gloat1": [
+"vo_w_gloat1.ogg"
+],
+"vo_w_gloat2": [
+"vo_w_gloat2.ogg"
+],
+"vo_w_gloat3": [
+"vo_w_gloat3.ogg"
+],
+"vo_w_gloat4": [
+"vo_w_gloat4.ogg"
+],
+"vo_w_rally": [
+"vo_w_rally.ogg"
+],
+"vo_w_shock": [
+"vo_w_shock.ogg"
+],
+"vo_w_win": [
+"vo_w_win.ogg"
+],
+"rain": [
+"rain_1.ogg"
+],
+"thunder": [
+"thunder_1.ogg",
+"thunder_2.ogg"
 ]
 }
