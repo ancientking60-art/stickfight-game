@@ -14,6 +14,56 @@ const QS = new URLSearchParams(location.search);
 const MANUAL = QS.has('manual');
 const USER = String(QS.get('user') || '').trim().replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 30); // TikTok name from the link
 const UQ = USER ? '?user=' + encodeURIComponent(USER) : '';           // used for recording: time is stepped from outside
+
+// ============================================================ display: sharp on phones + fills the screen
+// The game is laid out in a fixed 1080x1920 world. The real canvas is sized in the screen's own pixels
+// (CSS size x devicePixelRatio), and every setTransform() gets the screen scale + centring folded in,
+// so lines and text are drawn at full phone resolution instead of being stretched (blurry).
+// Extra screen above/below the 9:16 game is filled by extending the top/bottom edge of the picture.
+const VIEW = { k: 1, ox: 0, oy: 0, gw: W, gh: H, fixed: MANUAL };
+const C2D = CanvasRenderingContext2D.prototype, _setT = C2D.setTransform, _getT = C2D.getTransform;
+const _shB = Object.getOwnPropertyDescriptor(C2D, 'shadowBlur');
+if (!VIEW.fixed) {
+  ctx.setTransform = function (a, b, c, d, e, f) {
+    if (a && typeof a === 'object') ({ a, b, c, d, e, f } = a);
+    const k = VIEW.k; _setT.call(this, a * k, b * k, c * k, d * k, e * k + VIEW.ox, f * k + VIEW.oy);
+  };
+  ctx.getTransform = function () { const g = _getT.call(this), k = VIEW.k; return new DOMMatrix([g.a / k, g.b / k, g.c / k, g.d / k, (g.e - VIEW.ox) / k, (g.f - VIEW.oy) / k]); };
+  // shadow blur is in screen pixels (not affected by the transform) - scale it like everything else
+  Object.defineProperty(ctx, 'shadowBlur', { get() { return _shB.get.call(this) / VIEW.k; }, set(v) { _shB.set.call(this, v * VIEW.k); } });
+}
+function layoutView() {
+  if (VIEW.fixed) { document.body.classList.add('fixed'); return; }
+  const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
+  let dpr = window.devicePixelRatio || 1;
+  const kFull = Math.min(vw / W, vh / H) * dpr;
+  if (kFull > 1.5) dpr *= 1.5 / kFull;               // cap: never draw the game bigger than 1620x2880 (keeps phones fast)
+  const cw = Math.round(vw * dpr), ch = Math.round(vh * dpr);
+  let k = Math.min(cw / W, ch / H);
+  if (k > 1 && k < 1.02) k = 1;                        // ~1080-pixel-wide phones: exact 1:1 pixels, no resampling at all
+  VIEW.k = k; VIEW.gw = Math.round(W * k); VIEW.gh = Math.round(H * k);
+  VIEW.ox = Math.floor((cw - VIEW.gw) / 2); VIEW.oy = Math.floor((ch - VIEW.gh) / 2);
+  if (cv.width !== cw) cv.width = cw;
+  if (cv.height !== ch) cv.height = ch;
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+}
+// fill the bands above/below (or beside) the 9:16 game so the whole phone screen is used
+function paintBars() {
+  if (VIEW.fixed) return;
+  const { ox, oy, gw, gh } = VIEW, cw = cv.width, ch = cv.height;
+  if (ox <= 0 && oy <= 0) return;
+  ctx.save(); _setT.call(ctx, 1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; _shB.set.call(ctx, 0);
+  if (oy > 0) {   // plain dark bands that match the HUD colours (no stretched streaks)
+    const bot = ch - oy - gh;
+    let g = ctx.createLinearGradient(0, 0, 0, oy); g.addColorStop(0, '#000000'); g.addColorStop(1, '#04050f');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, cw, oy);
+    g = ctx.createLinearGradient(0, oy + gh, 0, ch); g.addColorStop(0, '#05060d'); g.addColorStop(1, '#000000');
+    ctx.fillStyle = g; ctx.fillRect(0, oy + gh, cw, bot);
+  }
+  if (ox > 0) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, ox, ch); ctx.fillRect(ox + gw, 0, cw - ox - gw, ch); }
+  ctx.restore();
+}
 const rand = (a, b) => a + Math.random() * (b - a);
 const rint = (a, b) => Math.floor(rand(a, b + 1));
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -157,10 +207,15 @@ function audioInit() {
   if (MANUAL) return;
   try {
     if (!AU.ctx) { AU.ctx = new (window.AudioContext || window.webkitAudioContext)(); AU.out = makeOut(AU.ctx); }
-    if (AU.ctx.state === 'suspended') AU.ctx.resume();
+    if (AU.ctx.state !== 'running') { const r = AU.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
+    if (!AU.unlocked) {   // play 1 silent sample inside the tap - some phones only unlock audio this way
+      const b = AU.ctx.createBuffer(1, 1, 22050), s = AU.ctx.createBufferSource(); s.buffer = b; s.connect(AU.ctx.destination); s.start(0);
+      AU.unlocked = AU.ctx.state === 'running';
+    }
     if (SB.ok) startWind(AU.ctx, AU.out, AU.ctx.currentTime, null);
   } catch (e) { AU.ctx = null; }
 }
+function audioRunning() { return !!(AU.ctx && AU.ctx.state === 'running'); }
 function env(g, t, vol, dur, att) {
   g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(Math.max(0.0002, vol), t + att); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 }
@@ -2252,7 +2307,7 @@ function glowPass(J, s, team, alpha) {
   glx.setTransform(1, 0, 0, 1, 0, 0); glx.clearRect(x0, y0, x1 - x0, y1 - y0);
   glx.setTransform(T); DC = glx; fillBody(J, s, `rgb(${t.glow})`, 4.5 * s); DC = ctx;
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = alpha * (team === 0 ? 0.95 : 1); ctx.filter = `blur(${blur.toFixed(1)}px)`;
+  ctx.globalAlpha = alpha * (team === 0 ? 0.95 : 1); ctx.filter = `blur(${(blur * VIEW.k).toFixed(1)}px)`;
   ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
   if (team === 1) ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);   // red needs a 2nd pass to read on sand
   ctx.restore();
@@ -3103,7 +3158,8 @@ function setupPanel() {
   document.getElementById('newRoundBtn').onclick = newRound;
   document.getElementById('autoBtn').classList.toggle('on', sim.auto);
   document.getElementById('soundBtn').textContent = 'Sound ON (M)';
-  window.addEventListener('pointerdown', audioInit);
+  // any tap/click/key turns the sound on (Android needs pointerup/touchend/click - pointerdown alone is not a 'gesture' there)
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click']) window.addEventListener(ev, () => { if (!audioRunning()) audioInit(); }, { passive: true });
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'SELECT') return;
     audioInit();
@@ -3125,6 +3181,56 @@ function updateLiveInfo() {
   el.textContent = m === 'live' ? `Connected to @${S.live.username} LIVE` : m === 'simulator' ? 'TEST MODE: add ?user=yourname to the link' : m === 'offline' ? `@${S.live.username} is not LIVE yet - retrying` : 'Connecting to TikTok...';
 }
 
+// ============================================================ TAP TO START (sound + full screen on phones)
+const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const IS_APP = (window.matchMedia && matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches) || navigator.standalone === true;
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function goFullscreen() {
+  if (isFull() || IS_APP) return;
+  const el = document.documentElement, rq = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!rq) return;
+  try {
+    const p = rq.call(el, { navigationUI: 'hide' });
+    Promise.resolve(p).then(lockPortrait, () => {});
+  } catch (e) {}
+}
+function lockPortrait() { try { const o = screen.orientation; if (o && o.lock) o.lock('portrait').catch(() => {}); } catch (e) {} }
+function startSound() {
+  audioInit();
+  const ping = () => { if (audioRunning() && AU.on) { const k = AU.ctx.currentTime; tn(AU.ctx, AU.out, k + 0.02, 'triangle', 660, 660, 0.12, 0.18); tn(AU.ctx, AU.out, k + 0.14, 'triangle', 990, 990, 0.2, 0.18); } };
+  if (AU.ctx) AU.ctx.resume().then(ping, () => {}); 
+}
+function setupStart() {
+  const tap = document.getElementById('tap'), hint = document.getElementById('fsHint');
+  if (!tap || MANUAL || QS.has('notap')) return;
+  let started = false;
+  const hide = () => { tap.classList.add('hidden'); };
+  const start = (e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    startSound(); goFullscreen(); hide(); started = true;
+  };
+  tap.addEventListener('click', start);
+  // phones always get the overlay (sound + full screen need a tap). On a PC it only shows if the browser blocked the sound;
+  // in a PC LIVE Studio/OBS browser source (?clean) it never blocks the picture for more than 8 s.
+  setTimeout(() => {
+    if (IS_TOUCH || !audioRunning()) {
+      tap.classList.remove('hidden');
+      if (!IS_TOUCH && QS.has('clean')) setTimeout(hide, 8000);
+    }
+  }, 350);
+  // left full screen (back button / swipe)? show a small hint; any tap goes full screen again
+  const onFs = () => {
+    const show = started && IS_TOUCH && !IS_APP && !isFull();
+    hint.classList.toggle('hidden', !show);
+  };
+  document.addEventListener('fullscreenchange', onFs); document.addEventListener('webkitfullscreenchange', onFs);
+  window.addEventListener('click', (e) => {
+    if (!hint.classList.contains('hidden') && !e.target.closest('#sim')) { goFullscreen(); if (!audioRunning()) startSound(); }
+  });
+  // coming back to the tab: wake the sound up again
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && AU.ctx && AU.ctx.state !== 'running') AU.ctx.resume().catch(() => {}); });
+}
+
 // ============================================================ websocket to server.js
 function connectWS() {
   if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
@@ -3138,7 +3244,7 @@ function connectWS() {
 let lastT = 0;
 function frame(now) {
   const rdt = Math.min(0.05, (now - lastT) / 1000 || 0.016); lastT = now;
-  tick(rdt); render();
+  tick(rdt); render(); paintBars();
   requestAnimationFrame(frame);
 }
 async function boot() {
@@ -3156,9 +3262,14 @@ async function boot() {
   BASE_S = clamp(+S.game.fighterSize || 0.66, 0.4, 1.2); GIANT_S = BASE_S * 2.4;
   try { await Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('20px Russo')]); } catch (e) {}
   drawBackground();
+  layoutView();
+  for (const ev of ['resize', 'orientationchange', 'fullscreenchange', 'webkitfullscreenchange']) window.addEventListener(ev, () => setTimeout(layoutView, 60));
+  if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(layoutView, 60));
   setupPanel(); updateLiveInfo(); connectWS();
   loadSamples();
   audioInit();   // works right away if the browser allows autoplay, otherwise after the first click/key
+  setupStart();
+  if (!MANUAL && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
   startRound();
   window.SF = {
     step: (n = 1, fps = 30) => { for (let i = 0; i < n; i++) tick(1 / fps); render(); },

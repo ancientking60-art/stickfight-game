@@ -3,17 +3,46 @@
 <head>
 <meta charset="utf-8">
 <title>STICK WAR LIVE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stick War">
+<link id="mf" rel="manifest" href="manifest.webmanifest">
+<script>document.getElementById('mf').href = '/manifest.webmanifest' + location.search;</script>
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preload" href="fonts/Bangers-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="fonts/RussoOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
 <style>
   @font-face { font-family: 'Bangers'; src: url('fonts/Bangers-Regular.ttf'); }
   @font-face { font-family: 'Russo'; src: url('fonts/RussoOne-Regular.ttf'); }
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: 'Russo', Arial, sans-serif; }
-  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  canvas { background: #05060d; height: 100vh; width: calc(100vh * 9 / 16); max-width: 100vw; max-height: calc(100vw * 16 / 9); display: block; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: 'Russo', Arial, sans-serif;
+               touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  #wrap { position: fixed; inset: 0; }
+  /* the canvas fills the whole screen; game.js sizes it in real screen pixels so it stays sharp */
+  canvas { background: #05060d; display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  /* recording mode (?manual) keeps the old fixed 1080x1920 canvas */
+  body.fixed #wrap { display: flex; align-items: center; justify-content: center; }
+  body.fixed canvas { position: static; height: 100vh; width: calc(100vh * 9 / 16); max-width: 100vw; max-height: calc(100vw * 16 / 9); }
+  #tap { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; flex-direction: column;
+         background: radial-gradient(ellipse at center, rgba(20,10,30,.55), rgba(0,0,0,.88)); cursor: pointer; text-align: center; }
+  #tap .t1 { font: 15vmin/1 'Bangers', Impact, sans-serif; letter-spacing: .04em; color: #fff;
+             text-shadow: 0 0 .25em #ff8a3d, 0 .06em 0 #000; animation: pulse 1.2s ease-in-out infinite; }
+  #tap .t2 { margin-top: 3vmin; font: 4.2vmin 'Russo', Arial, sans-serif; color: #ffd9b0; opacity: .9; }
+  #tap .men { font: 13vmin/1 'Bangers', Impact, sans-serif; margin-bottom: 4vmin; }
+  #tap .men b { color: #fff; text-shadow: 0 0 .2em #fff; } #tap .men i { font-style: normal; color: #0b0a0c; text-shadow: 0 0 .2em #ff3020; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  #fsHint { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 15;
+            background: rgba(0,0,0,.72); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 999px;
+            padding: 8px 16px; font: 13px 'Russo', Arial, sans-serif; white-space: nowrap; cursor: pointer; }
+  #tap.hidden, #fsHint.hidden { display: none; }
   #sim { position: fixed; top: 8px; right: 8px; width: 230px; max-height: calc(100vh - 16px); overflow-y: auto;
          background: rgba(10,14,30,.92); border: 1px solid #2a6cff; border-radius: 10px; padding: 8px; color: #dfe8ff; font-size: 12px; z-index: 5;
          box-shadow: 0 0 18px rgba(40,120,255,.35); }
   #sim.hidden { display: none; }
+  #sim { touch-action: pan-y; -webkit-user-select: auto; user-select: auto; }
   #sim h3 { margin: 2px 0 6px; font-size: 14px; color: #7fb2ff; letter-spacing: 1px; }
   #sim .row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
   #sim button { flex: 1 1 auto; background: #13204a; color: #fff; border: 1px solid #2f5bd8; border-radius: 6px; padding: 5px 6px;
@@ -55,6 +84,12 @@
   <small>Keys: 1 new White fan, 2 new Black fan, Q W E R T Y U = gifts, L likes, F follow, S share, A auto demo, N new round, H hide this box.<br>
   <span id="liveInfo">-</span></small>
 </div>
+<div id="tap" class="hidden">
+  <div class="men"><b>WHITE</b> VS <i>BLACK</i></div>
+  <div class="t1">TAP TO START</div>
+  <div class="t2">turns on sound + full screen</div>
+</div>
+<div id="fsHint" class="hidden">&#x26F6; Tap for full screen</div>
 <script src="game.js"></script>
 </body>
 </html>

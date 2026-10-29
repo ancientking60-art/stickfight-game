@@ -16,6 +16,23 @@ LINK MODE (new): put your TikTok name in the game link, for example
  config.json, and without a name at all it runs in TEST MODE.
  clean=1 hides the test buttons and the small status text.
 
+PLAY FROM YOUR PHONE (TikTok "Mobile Gaming" screen share) - v9:
+ 1. Open your game link in Chrome on the phone, for example
+      https://stickfight-game-hpug.onrender.com/?user=YOURNAME&clean=1
+    (the free server sleeps - the first open can take about 1 minute)
+ 2. Tap the big  TAP TO START  screen. This turns the SOUND on and
+    makes the game FULL SCREEN (no link bar, no bottom bar).
+    If the bars come back, tap the game once ("Tap for full screen").
+ 3. Best way: Chrome menu (3 dots) -> "Add to Home screen" -> Install.
+    Open the game from the new Stick War icon - it always opens full
+    screen and already knows your TikTok name.
+ 4. Turn the phone's MEDIA volume up. When TikTok asks, allow it to
+    record the screen WITH audio.
+ 5. Do not switch to other apps while live - the browser pauses the
+    game in the background.
+ The game now draws at the phone's full sharpness and fills the whole
+ screen, so it looks much clearer for viewers.
+
 VERSION 8 - "SUNSET DESERT" (new look, same game):
  - Fighters are now WHITE (left, soft white glow) vs BLACK (right,
    red glow), with thick round limbs and small angry eyes.

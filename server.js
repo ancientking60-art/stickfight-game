@@ -31,7 +31,8 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
-  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.ttf': 'font/ttf'
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.ttf': 'font/ttf',
+  '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
 
 const cleanUser = (u) => String(u || '').trim().replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 30);
@@ -56,7 +57,26 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ ok: true, sessions: [...sessions.values()].map((x) => ({ user: x.user, mode: x.mode, clients: x.clients.size })) }));
     return;
   }
-  let p = decodeURIComponent(url.pathname);
+  if (url.pathname === '/manifest.webmanifest') {
+    // 'Add to Home screen' app: opens the same ?user= link full screen without the browser bars
+    const qu = cleanUser(url.searchParams.get('user'));
+    const q = new URLSearchParams(); if (qu) q.set('user', qu); if (url.searchParams.has('clean')) q.set('clean', '1');
+    const qs = q.toString() ? '?' + q.toString() : '';
+    res.writeHead(200, { 'Content-Type': MIME['.webmanifest'], 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({
+      id: '/' + qs, name: qu ? `Stick War LIVE - @${qu}` : 'Stick War LIVE', short_name: 'Stick War',
+      start_url: '/' + qs, scope: '/', display: 'fullscreen', display_override: ['fullscreen', 'standalone'], orientation: 'portrait',
+      background_color: '#05060d', theme_color: '#05060d',
+      icons: [
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    }));
+    return;
+  }
+  let p;
+  try { p = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); res.end(); return; }
   if (p === '/') p = '/index.html';
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); res.end(); return; }
