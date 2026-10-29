@@ -11,9 +11,34 @@ let BASE_S = 0.66;     // fighter size - config.json game.fighterSize
 let GIANT_S = 1.6;
 const DMG_SCALE = 1.6; // global damage tuning (config "damage" multiplies this)
 const QS = new URLSearchParams(location.search);
+// v11: remember the TikTok name. A link with ?user=NAME (or /u/NAME) is saved on this phone/PC; opening the game with no name
+// (Home Screen icon, bare link) uses the saved name + clean mode again. ?user=reset forgets it.
+const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} return null; };
+const cleanName = (u) => String(u || '').trim().replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 30);
+let USER_RESTORED = false;
+(function rememberUser() {
+  if (QS.has('manual')) return;                                   // recording mode: never touch it
+  let pathUser = ''; try { const m = /^\/u\/([^/?#]+)/.exec(location.pathname); if (m) pathUser = decodeURIComponent(m[1]); } catch (e) {}
+  const raw = String(QS.get('user') || pathUser || '').trim();
+  let fix = !!pathUser;
+  if (/^(reset|clear|forget|none)$/i.test(raw)) {
+    LS('sf_user', null); LS('sf_clean', null); QS.delete('user'); QS.delete('clean'); fix = true;
+  } else if (cleanName(raw)) {
+    if (pathUser && !QS.has('clean')) QS.set('clean', '1');      // /u/NAME is the clean streaming link
+    QS.set('user', cleanName(raw));
+    LS('sf_user', cleanName(raw)); LS('sf_clean', QS.has('clean') ? '1' : '0');
+  } else {
+    const saved = cleanName(LS('sf_user'));
+    if (saved) { QS.set('user', saved); if (LS('sf_clean') === '1') QS.set('clean', '1'); USER_RESTORED = true; fix = true; }
+  }
+  if (fix) {
+    try { history.replaceState(null, '', '/' + (QS.toString() ? '?' + QS.toString() : '') + location.hash); } catch (e) {}
+    try { const mf = document.getElementById('mf'); if (mf) mf.href = '/manifest.webmanifest' + (QS.toString() ? '?' + QS.toString() : ''); } catch (e) {}
+  }
+})();
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const MANUAL = QS.has('manual');
-const USER = String(QS.get('user') || '').trim().replace(/^@/, '').replace(/[^A-Za-z0-9._]/g, '').slice(0, 30); // TikTok name from the link
+const USER = cleanName(QS.get('user')); // TikTok name from the link (or the saved one)
 const UQ = USER ? '?user=' + encodeURIComponent(USER) : '';           // used for recording: time is stepped from outside
 
 // ============================================================ display: sharp on phones + fills the screen
@@ -3183,7 +3208,21 @@ function autoSim(rdt) {
 }
 function setupPanel() {
   const panel = document.getElementById('sim');
-  if (QS.has('clean') || MANUAL || USER) panel.classList.add('hidden'); // live link: test box hidden (press H to show)
+  // test box: hidden on phones/tablets, in clean mode and on live links (PC: press H to show)
+  const TOUCH_UI = IS_IOS || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  if (QS.has('clean') || MANUAL || USER || TOUCH_UI) panel.classList.add('hidden');
+  // phones: 3-finger tap, or hold the top-left corner for 1 s, shows/hides it (never in clean mode)
+  if (TOUCH_UI && !QS.has('clean') && !MANUAL) {
+    let holdT = 0;
+    const toggle = () => panel.classList.toggle('hidden');
+    window.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 3) { clearTimeout(holdT); toggle(); return; }
+      const t = e.touches[0];
+      if (e.touches.length === 1 && t && t.clientX < 70 && t.clientY < 90) holdT = setTimeout(toggle, 1000);
+    }, { passive: true });
+    const cancel = () => clearTimeout(holdT);
+    window.addEventListener('touchend', cancel, { passive: true }); window.addEventListener('touchmove', cancel, { passive: true });
+  }
   const gb = document.getElementById('giftBtns');
   SIM_GIFTS.forEach(([n, c, k]) => {
     const b = document.createElement('button'); b.textContent = `${n} (${k.slice(3)})`; b.title = `${c} coins`;
@@ -3256,6 +3295,17 @@ function setupStart() {
     startSound(); goFullscreen(); hide(); started = true;
   };
   tap.addEventListener('click', start);
+  // phone with no TikTok name (no link name, nothing saved): ask once, then it is remembered
+  const nb = document.getElementById('nameBox');
+  if (nb && !USER && (IS_TOUCH || IS_IOS)) {
+    nb.classList.remove('hidden');
+    for (const ev of ['click', 'pointerdown', 'pointerup', 'touchstart', 'touchend']) nb.addEventListener(ev, (e) => e.stopPropagation(), { passive: ev.startsWith('touch') });
+    nb.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const n = cleanName(document.getElementById('nameIn').value);
+      if (n) location.replace('/?user=' + encodeURIComponent(n) + '&clean=1');
+    });
+  }
   if (IS_IOS) {
     const t2 = tap.querySelector('.t2');
     if (t2) t2.innerHTML = IS_APP ? 'turns on sound' : 'turns on sound<br><span class="ios">Full screen on iPhone: tap Share <b>&#x2191;</b> then <b>Add to Home Screen</b> and open Stick War from the new icon</span>';

@@ -32,6 +32,15 @@ PLAY ON IPHONE (Safari) - v10:
  Comment white or 1 = WHITE team, black or 2 = BLACK team.
  If something breaks, a tiny red line at the bottom shows the reason.
 
+v11 - NAME IS REMEMBERED:
+ - the game REMEMBERS your TikTok name. Open your link once with
+   ?user=NAME&clean=1 and after that the bare link or the Home Screen icon
+   uses the same name. Short link: /u/NAME (same as ?user=NAME&clean=1).
+   To forget the name open  /?user=reset . On a phone with no name saved,
+   the start screen asks "Your TikTok name".
+ - Phones never show the test buttons box. To test on a phone (only
+   without clean), tap with 3 fingers or hold the top-left corner 1 s.
+
 PLAY FROM YOUR PHONE (TikTok "Mobile Gaming" screen share) - v9:
  1. Open your game link in Chrome on the phone, for example
       https://stickfight-game-hpug.onrender.com/?user=YOURNAME&clean=1

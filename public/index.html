@@ -9,7 +9,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stick War">
-<link id="mf" rel="manifest" href="manifest.webmanifest">
+<base href="/">
+<link id="mf" rel="manifest" href="/manifest.webmanifest">
 <script>
   // tiny visible error line: if anything breaks (even a script the browser can't read) it shows at the bottom
   (function () {
@@ -24,7 +25,6 @@
     window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; window.__sfErr('promise: ' + (r && r.message ? r.message : r)); });
   })();
 </script>
-<script>document.getElementById('mf').href = '/manifest.webmanifest' + location.search;</script>
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <link rel="preload" href="fonts/Bangers-Regular.ttf" as="font" type="font/ttf" crossorigin>
@@ -53,7 +53,12 @@
             padding: 8px 16px; font: 13px 'Russo', Arial, sans-serif; white-space: nowrap; cursor: pointer; }
   #tap .ios { display: block; margin: 5vmin auto 0; max-width: 80vw; font: 3.6vmin/1.45 'Russo', Arial, sans-serif; color: #fff; opacity: .85; }
   #tap .ios b { color: #ffd84a; }
-  #tap.hidden, #fsHint.hidden { display: none; }
+  #nameBox { margin-top: 6vmin; text-align: center; font: 3.6vmin 'Russo', Arial, sans-serif; color: #fff; }
+  #nameBox div { margin-top: 2vmin; display: flex; gap: 2vmin; justify-content: center; }
+  #nameBox input { width: 52vmin; font: 16px 'Russo', Arial, sans-serif; padding: 2.2vmin 3vmin; border-radius: 2vmin; border: 2px solid #ffd84a; background: rgba(0,0,0,.6); color: #fff; }
+  #nameBox button { font: 16px 'Russo', Arial, sans-serif; padding: 0 4vmin; border-radius: 2vmin; border: 0; background: #ffd84a; color: #111; }
+  #nameBox small { display: block; margin-top: 2vmin; opacity: .7; font-size: 3vmin; }
+  #tap.hidden, #fsHint.hidden, #nameBox.hidden { display: none; }
   #errLine { position: fixed; left: 4px; bottom: calc(2px + env(safe-area-inset-bottom)); z-index: 30; max-width: 96vw; overflow: hidden; white-space: nowrap;
              text-overflow: ellipsis; font: 10px/1.3 monospace; color: #ff8080; background: rgba(0,0,0,.6); padding: 1px 4px; pointer-events: none; }
   #sim { position: fixed; top: 8px; right: 8px; width: 230px; max-height: calc(100vh - 16px); overflow-y: auto;
@@ -106,6 +111,11 @@
   <div class="men"><b>WHITE</b> VS <i>BLACK</i></div>
   <div class="t1">TAP TO START</div>
   <div class="t2">turns on sound + full screen</div>
+  <form id="nameBox" class="hidden" autocomplete="off">
+    <label for="nameIn">Your TikTok name</label>
+    <div><input id="nameIn" type="text" placeholder="@yourname" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"><button type="submit">GO</button></div>
+    <small>or tap anywhere else to just test</small>
+  </form>
 </div>
 <div id="fsHint" class="hidden">&#x26F6; Tap for full screen</div>
 <script src="game.js"></script>

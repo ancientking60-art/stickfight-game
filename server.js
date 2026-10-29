@@ -65,7 +65,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': MIME['.webmanifest'], 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({
       id: '/' + qs, name: qu ? `Stick War LIVE - @${qu}` : 'Stick War LIVE', short_name: 'Stick War',
-      start_url: '/' + qs, scope: '/', display: 'fullscreen', display_override: ['fullscreen', 'standalone'], orientation: 'portrait',
+      start_url: qu && q.has('clean') ? '/u/' + encodeURIComponent(qu) : '/' + qs, scope: '/', display: 'fullscreen', display_override: ['fullscreen', 'standalone'], orientation: 'portrait',
       background_color: '#05060d', theme_color: '#05060d',
       icons: [
         { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -77,7 +77,20 @@ const server = http.createServer((req, res) => {
   }
   let p;
   try { p = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); res.end(); return; }
-  if (p === '/') p = '/index.html';
+  // the game page: '/', '/index.html' or the short streaming link '/u/NAME' (= ?user=NAME&clean=1).
+  // The Home Screen manifest link already carries the name, so 'Add to Home Screen' always keeps it.
+  const um = /^\/u\/([^/]+)\/?$/.exec(p);
+  if (p === '/' || p === '/index.html' || um) {
+    fs.readFile(path.join(PUBLIC, 'index.html'), 'utf8', (err, html) => {
+      if (err) { res.writeHead(500); res.end(); return; }
+      const qu = cleanUser(um ? um[1] : url.searchParams.get('user'));
+      const q = new URLSearchParams(); if (qu && !/^(reset|clear|forget|none)$/i.test(qu)) q.set('user', qu); if (um || url.searchParams.has('clean')) q.set('clean', '1');
+      const out = html.replace('href="/manifest.webmanifest"', `href="/manifest.webmanifest${q.toString() ? '?' + q.toString().replace(/&/g, '&amp;') : ''}"`);
+      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
+      res.end(out);
+    });
+    return;
+  }
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
