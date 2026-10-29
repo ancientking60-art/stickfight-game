@@ -2866,7 +2866,7 @@ function drawHUD() {
     ctx.stroke();
     const L = R ? x + w - 22 : x + 22, al = R ? 'right' : 'left', ar = R ? 'left' : 'right', Rr = R ? x + 22 : x + w - 22;
     ctx.textAlign = al; ctx.font = '64px Bangers, Impact, sans-serif'; if (i === 0) { ctx.shadowColor = 'rgba(255,255,255,0.8)'; ctx.shadowBlur = 16; ctx.fillStyle = '#ffffff'; } else { ctx.shadowColor = 'rgba(255,30,20,0.9)'; ctx.shadowBlur = 16; ctx.fillStyle = '#0b0a0c'; } ctx.fillText(t.name, L, y + 64); if (i === 1) { ctx.lineWidth = 2.5; ctx.strokeStyle = '#ff4040'; ctx.strokeText(t.name, L, y + 64); } ctx.shadowBlur = 0;
-    ctx.textAlign = ar; ctx.font = '18px Russo, Arial'; ctx.fillStyle = '#ffd84a'; ctx.fillText(`COMMENT ${i + 1}`, Rr, y + 30);
+    ctx.textAlign = ar; outlined(`COMMENT ${i + 1}`, Rr, y + 34, '28px Russo, Arial', '#ffd84a', '#000', 5);
     drawCrown(R ? x + 22 : x + w - 92, y + 66, 1.2, '#ffc93a');
     ctx.font = '34px Russo, Arial'; ctx.fillStyle = '#fff'; ctx.textAlign = R ? 'left' : 'right'; ctx.fillText(String(tm.wins), R ? x + 62 : x + w - 22, y + 66);
     const bx = x + 20, by = y + 82, bw = w - 40, bh = 38;
@@ -2886,8 +2886,8 @@ function drawHUD() {
       ctx.fillText([hero.giantT > 0 ? 'GIANT' : '', hero.superT > 0 ? 'KUNG FU' : '', hero.weapon !== 'fists' ? WEAPON_NAMES[hero.weapon] : ''].filter(Boolean).join(' + '), Rr, y + 152);
     }
     ctx.font = '20px Russo, Arial';
-    const top = topSupporters(i, 3);
-    if (!top.length) { ctx.textAlign = al; ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.6; ctx.fillText(`comment ${i + 1} to be a fan!`, L, y + 184); ctx.globalAlpha = 1; }
+    const top = topSupporters(i, 2);
+    if (!top.length) { ctx.textAlign = al; ctx.font = '24px Russo, Arial'; ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.85; ctx.fillText(`comment ${i + 1} to be a fan!`, L, y + 186); ctx.globalAlpha = 1; }
     top.forEach((s, k) => {
       const yy = y + 182 + k * 25, nx = R ? x + w - 22 : x + 22;
       ctx.textAlign = al; ctx.fillStyle = ['#ffc93a', '#d9e0f0', '#e0a060'][k]; ctx.fillText(`${k + 1}.`, nx, yy);
@@ -2895,43 +2895,40 @@ function drawHUD() {
       ctx.fillText(nm, R ? nx - 32 : nx + 32, yy);
       ctx.textAlign = ar; ctx.fillStyle = '#ffd84a'; ctx.fillText(String(Math.floor(s.points)), Rr, yy);
     });
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(x + 20, y + 236, w - 40, 16, 8); ctx.fill();
-    ctx.fillStyle = '#ff4d8d'; roundRect(x + 20, y + 236, Math.max(16, (w - 40) * clamp(tm.likes / lk.every, 0, 1)), 16, 8); ctx.fill();
-    ctx.font = '13px Russo, Arial'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(`${lk.every} LIKES = +${lk.heal} HP`, x + w / 2, y + 249);
+    // v13: big likes bar - '10 LIKES = +2 HP' must be readable on a phone LIVE
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; roundRect(x + 16, y + 216, w - 32, 38, 12); ctx.fill();
+    ctx.fillStyle = '#ff2f7a'; roundRect(x + 16, y + 216, Math.max(20, (w - 32) * clamp(tm.likes / lk.every, 0, 1)), 38, 12); ctx.fill();
+    ctx.strokeStyle = '#ff9cc4'; ctx.lineWidth = 2; roundRect(x + 16, y + 216, w - 32, 38, 12); ctx.stroke();
+    ctx.textAlign = 'center'; outlined(`\u2764 ${lk.every} LIKES = +${lk.heal} HP`, x + w / 2, y + 245, '28px Russo, Arial', '#ffffff', '#000', 6);
   }
   // VS badge
   ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(W / 2, 260, 40, 0, TAU); ctx.fill(); ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 4; ctx.stroke();
   ctx.textAlign = 'center'; outlined('VS', W / 2, 276, '44px Bangers, Impact', '#ffd84a', '#000', 5);
   // join strip
-  ctx.fillStyle = 'rgba(10,20,60,0.85)'; roundRect(40, 408, W - 80, 50, 25); ctx.fill(); ctx.strokeStyle = '#2f7bff'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = 'rgba(10,20,60,0.9)'; roundRect(20, 406, W - 40, 72, 36); ctx.fill(); ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 4; ctx.stroke();
   const segs = [['COMMENT ', '#fff'], ['1', '#ffffff'], [' WHITE   ', '#e6ebf5'], ['2', '#ff4a4a'], [' BLACK ', '#ff4a4a'], ['  TO BE A FAN!', '#ffd84a']];
-  ctx.font = '30px Russo, Arial'; let tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width;
-  let sx = W / 2 - tw / 2; ctx.textAlign = 'left';
-  for (const s of segs) { ctx.fillStyle = s[1]; ctx.fillText(s[0], sx, 444); sx += ctx.measureText(s[0]).width; }
+  let fs = 46; ctx.font = `${fs}px Russo, Arial`; let tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width;
+  if (tw > W - 90) { fs = Math.floor(fs * (W - 90) / tw); ctx.font = `${fs}px Russo, Arial`; tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width; }
+  let sx = W / 2 - tw / 2; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  for (const s of segs) { ctx.strokeStyle = '#000'; ctx.lineWidth = 7; ctx.strokeText(s[0], sx, 458); ctx.fillStyle = s[1]; ctx.fillText(s[0], sx, 458); sx += ctx.measureText(s[0]).width; }
   // bottom panels
   const py = VIEW_BOT;
   ctx.fillStyle = 'rgba(5,8,22,0.9)'; ctx.fillRect(0, py - 4, W, H - py + 4);
-  ctx.fillStyle = 'rgba(5,8,22,0.82)'; roundRect(16, py + 6, 520, 306, 16); ctx.fill(); ctx.strokeStyle = 'rgba(47,123,255,0.6)'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = 'rgba(5,8,22,0.82)'; roundRect(548, py + 6, 516, 306, 16); ctx.fill(); ctx.strokeStyle = 'rgba(255,200,60,0.7)'; ctx.stroke();
-  ctx.textAlign = 'left'; outlined('BATTLE FEED', 34, py + 42, '32px Bangers, Impact', '#7fb2ff', '#000', 5);
-  ctx.font = '21px Russo, Arial';
-  feed.forEach((f, i) => {
-    ctx.globalAlpha = clamp(f.life / f.max * 3, 0, 1);
-    let x = 34; const yy = py + 78 + i * 33;
-    for (const [s, c] of f.parts) {
-      let txt = s; const room = 518 - x; if (room < 20) break;
-      while (ctx.measureText(txt).width > room && txt.length > 2) txt = txt.slice(0, -2) + '…';
-      ctx.fillStyle = c; ctx.fillText(txt, x, yy); x += ctx.measureText(txt).width;
-    }
-  });
-  ctx.globalAlpha = 1;
-  outlined('FEED YOUR HERO', 566, py + 42, '32px Bangers, Impact', '#ffd84a', '#000', 5);
-  ctx.font = '19px Russo, Arial';
-  legendRows().forEach(([g, a], i) => {
-    const yy = py + 78 + i * 29;
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ffb6d5'; let gtxt = g; while (ctx.measureText(gtxt).width > 235 && gtxt.length > 3) gtxt = gtxt.slice(0, -2);
-    ctx.fillText(gtxt, 566, yy);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#ffffff'; ctx.fillText(a, 1048, yy);
+  // v13: the BATTLE FEED panel is gone (bubbles over the fighters already tell the story);
+  // FEED YOUR HERO now uses the whole bottom, 2 columns x 4 rows, big outlined text for phone LIVE viewers
+  ctx.fillStyle = 'rgba(5,8,22,0.88)'; roundRect(12, py + 4, W - 24, H - py - 12, 18); ctx.fill(); ctx.strokeStyle = 'rgba(255,200,60,0.85)'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.textAlign = 'center'; outlined('FEED YOUR HERO', W / 2, py + 54, '52px Bangers, Impact', '#ffd84a', '#000', 7);
+  const rows = legendRows(), colW = 466, rh = 62;
+  ctx.fillStyle = 'rgba(255,200,60,0.35)'; ctx.fillRect(W / 2 - 1, py + 76, 2, 4 * rh - 6);
+  rows.slice(0, 8).forEach(([g, a], i) => {
+    const col = i < 4 ? 0 : 1, r = i % 4, x0 = col ? W / 2 + 28 : 34, x1 = x0 + colW - 6, yy = py + 106 + r * rh;
+    const likeRow = /LIKES/.test(g);
+    if (likeRow) { ctx.fillStyle = 'rgba(255,47,122,0.35)'; roundRect(x0 - 12, yy - 40, colW + 12, 54, 12); ctx.fill(); }
+    const name = g.split(' / ')[0];
+    let f = 32; ctx.font = `${f}px Russo, Arial`;
+    while (f > 20 && ctx.measureText((likeRow ? '\u2764 ' : '') + name).width + ctx.measureText(a).width + 24 > colW) { f -= 1; ctx.font = `${f}px Russo, Arial`; }
+    ctx.textAlign = 'left'; outlined(likeRow ? '\u2764 ' + name : name, x0, yy, `${f}px Russo, Arial`, '#ff9fcb', '#000', 5);
+    ctx.textAlign = 'right'; outlined(a, x1, yy, `${f}px Russo, Arial`, '#ffffff', '#000', 5);
   });
   // countdown / winner / callouts
   ctx.textAlign = 'center';
