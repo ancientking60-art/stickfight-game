@@ -171,6 +171,7 @@ function loadSamples() {
         SB.buf[g] = got.filter(Boolean);
       }));
       SB.ok = !!(SB.buf.punch && SB.buf.punch.length);
+      await loadVO(dec, fmt);
     } catch (e) { SB.ok = false; }
     if (AU.ctx && SB.ok) startWind(AU.ctx, AU.out, 0, null);
     return SB.ok;
@@ -1042,7 +1043,7 @@ function resolveHit(A, D, h, lp) {
   if (g === 'parry' && !low) {
     const hp = D.J.hF;
     sparks(hp.x, hp.y, -dir, 14, ['#ffffff', '#ffe27a', '#9fe3ff'], 1.2); ring(hp.x, hp.y, 40, '#ffffff', 0.25, 4);
-    D.sound('ting'); floatText(D.x, D.y - 220 * D.s, 'PARRY!', '#ffe27a', 30, 0.8); bubble(D, pick(['HA!', 'NICE TRY!', 'NOPE!']), '😏', { pri: 2 }); hitFlash(hp.x, hp.y, 0.6); shake(5);
+    D.sound('ting'); floatText(D.x, D.y - 220 * D.s, 'PARRY!', '#ffe27a', 30, 0.8); bubble(D, pick(TALK.parry), '😏', { pri: 2 }); hitFlash(hp.x, hp.y, 0.6); shake(5);
     A.mv = null; A.play('staggered', { keepFace: true }); A.brain.onOutcome('parried');
     D.brain.onParried(A);
     timeCtl.stop = Math.max(timeCtl.stop, 0.13); camPunch(0.08); duel.calm = Math.max(duel.calm, 0.3);
@@ -1056,7 +1057,7 @@ function resolveHit(A, D, h, lp) {
     } else {
       sparks(cx, cy, -dir, 9, ['#7fd4ff', '#ffffff']); sfx(h.sword ? 'clash' : 'clang', cx, h.sword ? 0.7 : 1);
       floatText(D.x, D.y - 215 * D.s, 'BLOCK!', '#7fd4ff', 24, 0.6); hitFlash(cx, cy, 0.45, '#e8f4ff'); shake(6);
-      if (Math.random() < 0.18) bubble(D, pick(['NOPE!', 'BLOCKED!', 'WEAK!']), pick(['🛡️', '😏']));
+      if (Math.random() < 0.18) bubble(D, pick(TALK.block), pick(['🛡️', '😏']));
     }
     const chip = Math.round(h.dmg * 0.12 * A.dmgMul() * DMG_SCALE * dmgMods(D));
     D.hp = Math.max(1, D.hp - chip);
@@ -1094,9 +1095,9 @@ function dealDamage(A, D, h, px, py, o = {}) {
   if (big) { impactFrame(px, py); focusLines(px, py, 0.3); }
   if (A) { A.combo++; A.comboT = 1.3; A.comboPop = 0.25; if (A.combo === 5) sfx('crowd', null, 0.6); A.brain.onOutcome('hit', h); }
   if (D.hp <= 0 && round.state === 'fight') { finisher(A, D, h, dir); return; }
-  if (A && A.combo === 3) bubble(A, pick(['TOO SLOW!', 'TOO EASY!', 'HAHA!', 'KEEP UP!']), pick(['😤', '😎', '🔥']), { pri: 2 });
-  else if (!D.lowSaid && D.hp < D.maxHp * 0.3) { D.lowSaid = true; bubble(D, pick(['NOT YET...', 'STILL HERE!', 'HELP ME!']), pick(['😰', '💦']), { pri: 3, dur: 1.7 }); }
-  else if (Math.random() < (heavy ? 0.55 : 0.15)) bubble(D, pick(['ARGH!', 'OOF!', 'OUCH!', 'UGH!']), pick(['😵', '💢', '🤕', '😵']), { pri: heavy ? 2 : 1 });
+  if (A && A.combo === 3) bubble(A, pick(TALK.combo), pick(['😤', '😎', '🔥']), { pri: 2 });
+  else if (!D.lowSaid && D.hp < D.maxHp * 0.3) { D.lowSaid = true; bubble(D, pick(TALK.low), pick(['😰', '💦']), { pri: 3, dur: 1.7, say: 'must' }); }
+  else if (Math.random() < (heavy ? 0.55 : 0.15)) bubble(D, '', pick(['😵', '💢', '🤕', '😵']), { pri: heavy ? 2 : 1 });
   if (D.hp <= 0) D.hp = 1;
   if (o.noReact) return;
   D.brain.onHurt();
@@ -2000,7 +2001,7 @@ function endRound(w) {
     const fan = topSupporters(w, 1)[0];
     round.mvp = { kills: heroes[w] ? heroes[w].kills : 0, fan: fan ? fan.nick : '', flawless: !!(heroes[w] && heroes[w].hp >= heroes[w].maxHp - 0.5) };
     confetti(160, [TEAMS[w].ui, '#ffd84a', '#7fb2ff', '#ffffff']);
-    if (heroes[w]) { bubble(heroes[w], pick(['EZ!', 'TOO EASY!', "WHO'S NEXT?", 'GG!', 'BOW DOWN!']), '👑', { force: true, pri: 9, dur: 2.6 }); VOS.until = 0; sayVO(heroes[w], 'win'); }
+    if (heroes[w]) { TT.seq.length = 0; bubble(heroes[w], pick(TALK.win), '👑', { force: true, pri: 9, dur: 2.6 }); }
     addFeed([['TEAM ' + TEAMS[w].name, TEAMS[w].ui], [' WINS ROUND ' + round.n, '#ffd84a']], 10);
   } else callout('DRAW!', 'NOBODY SURVIVED', '#ffd84a', 150, 2);
   sfx('fanfare'); sfx('crowd');
@@ -2011,9 +2012,9 @@ function updateRound(dt) {
     while (round.beeps < 3 && round.t >= round.beeps * 0.8) { round.beeps++; sfx('beep'); }
     if (!round.taunted && round.t > 0.05) {
       round.taunted = true; const a = fighters[Math.floor(Math.random() * fighters.length)];
-      if (a) { a.play('taunt'); bubble(a, pick(['COME ON!', 'IS THAT ALL?', "YOU'RE MINE!", "LET'S GO!"]), pick(['😏', '👊', '😤']), { force: true, dur: 1.4 }); round.tauntA = a; }
+      if (a) { a.play('taunt'); bubble(a, pick(TALK.intro), pick(['😏', '👊', '😤']), { force: true, dur: 1.4, say: 'must' }); round.tauntA = a; }
     }
-    if (!round.replied && round.t > 1.05) { round.replied = true; const b = fighters.find((f) => f !== round.tauntA && f.alive); if (b) bubble(b, pick(['BRING IT!', 'WATCH THIS!', 'NO CHANCE!']), pick(['🔥', '😎', '💪']), { force: true, dur: 1.4 }); }
+    if (!round.replied && round.t > 1.0 && (voFree() || round.t > 2.2)) { round.replied = true; const b = fighters.find((f) => f !== round.tauntA && f.alive); if (b) bubble(b, pick(TALK.introReply), pick(['🔥', '😎', '💪']), { force: true, dur: 1.4, say: 'must' }); }
     if (!round.bowed && round.t > 0.95) { round.bowed = true; for (const f of fighters) if (f.alive) f.play('bow'); }
     if (round.t >= 2.4) { round.state = 'fight'; round.t = 0; callout('FIGHT!', '', '#ff4545', 190, 1.0); sfx('go'); sfx('crowd'); shake(10); }
   } else if (round.state === 'fight') {
@@ -2115,8 +2116,8 @@ function gift(ev) {
 function applyGift(s, info, count, label, quiet = false) {
   const team = s.team, col = TEAMS[team].fan, h = heroOf(team);
   const got = heal(team, info.heal * count, s.nick);
-  if (!quiet) ttGift(team, label.replace(/ x\d+$/, ''));
-  if (!quiet && !info.power && got > 0 && h && Math.random() < 0.6) bubble(h, Math.random() < 0.5 ? '@' + shortNick(s.nick) + ' THANK YOU!' : 'THANKS @' + shortNick(s.nick) + '!', pick(['💚', '🔥']), { pri: 4, dur: 1.6 });
+  if (!quiet) ttGift(team, info.heal * count);
+  if (!quiet && !info.power && got > 0 && h && Math.random() < 0.6) ttThanks(h, s.nick, pick(['💚', '🔥']));
   if (info.power) {
     if (h) applyPower(h, info.power, count, s);
     else { s.pending.push({ info: { heal: 0, power: info.power }, count, label }); if (!quiet) addFeed([[s.nick, col], [' ' + POWER_TEXT[info.power] + ' saved for next round', '#bbc']]); return; }
@@ -2131,7 +2132,7 @@ function applyGift(s, info, count, label, quiet = false) {
 function applyPower(h, p, count, s) {
   const team = h.team;
   sfx('powerup', h.x);
-  if (s && s.nick) { bubble(h, 'THANKS @' + shortNick(s.nick) + '!', pick(['🔥', '💪', '⚡']), { force: true, pri: 5, dur: 1.8 }); h.sound('kiai2', 0.8); }
+  if (s && s.nick) { ttThanks(h, s.nick, pick(['🔥', '💪', '⚡'])); h.sound('kiai2', 0.8); }
   switch (p) {
     case 'sword': case 'pistol': case 'rifle':
       h.setWeapon(p); floatText(h.x, h.y - 250 * h.s, WEAPON_NAMES[p] + '!', '#ffd84a', 40, 1.2); ring(h.x, h.cy(), 90 * h.s + 30, '#ffd84a', 0.4, 6); break;
@@ -2595,10 +2596,32 @@ function drawFighter(f) {
   drawSmears(f);
   const lying = f.mv && f.mv.d.lie;
   const blink = f.invuln > 0 && !lying && Math.floor(clock * 20) % 2 === 0;
+  // v15: talking = jaw/head bob + chest pump + a talking hand (only drawn, the pose itself is untouched)
+  const ta = lying ? 0 : talkAmp(f), sv = ta > 0.01 || f.talk ? ['head', 'neck', 'hF', 'eF'].map((k) => [k, J[k].x, J[k].y]) : null;
+  if (sv) {
+    const bob = Math.sin((clock - f.talk.t0) * 9) * 0.5 + 0.5, fc = f.face || 1;
+    J.head.y -= (ta * 6 + bob * 2) * s; J.head.x += fc * ta * 3 * s; J.neck.y -= ta * 3.5 * s; J.neck.x += fc * ta * 1.5 * s;
+    if (!f.busy() && f.weapon !== 'sword' && !f.isGun()) { J.hF.y -= (14 + ta * 26) * s; J.hF.x += fc * (6 + ta * 8) * s; J.eF.y -= (6 + ta * 8) * s; }
+  }
+  // v15 lighting: warm sunset rim on the sun side + cold lightning rim during flashes
+  if (!blink && !lying) {
+    ctx.save(); ctx.translate(-3 * s, -2.4 * s); fillBody(J, s, 'rgba(255,150,70,0.8)', 2.2 * s); ctx.restore();
+    if (WX.on && WX.flash > 0.05) { ctx.save(); ctx.globalAlpha = Math.min(1, WX.flash * 1.2); ctx.translate(1.5 * s, -4 * s); fillBody(J, s, 'rgb(215,228,255)', 2.8 * s); ctx.restore(); }
+  }
   drawBody(J, f.team, s, f.flash > 0, blink ? 0.7 : 1);
   drawWeapon(f);
   drawEyes(f);
-  if (!lying) drawFace(f);
+  if (!lying) { drawFace(f); if (ta > 0.01 || f.talk) drawMouth(f, ta); }
+  if (sv) for (const [k, x, y] of sv) { J[k].x = x; J[k].y = y; }
+}
+function drawMouth(f, a) {   // open mouth that follows the voice clip loudness
+  const J = f.J, hr = J.hr * HEAD_K; if (!J.head || !J.neck) return;
+  const ang = Math.atan2(J.head.y - J.neck.y, J.head.x - J.neck.x) + PI / 2, fc = f.face * (f.spinFace || 1);
+  ctx.save(); ctx.translate(J.head.x, J.head.y); ctx.rotate(ang); ctx.scale(fc, 1);
+  ctx.fillStyle = f.team ? '#ff2a1c' : '#16161a';
+  if (f.team) { ctx.shadowColor = 'rgba(255,40,20,0.95)'; ctx.shadowBlur = 8 * f.s / 0.66; }
+  ctx.beginPath(); ctx.ellipse(hr * 0.36, hr * 0.5, hr * (0.13 + 0.07 * a), hr * (0.03 + 0.24 * a), 0, 0, TAU); ctx.fill();
+  ctx.restore();
 }
 function drawRagdoll(r) {
   const J = {}; RD_KEYS.forEach((k, i) => (J[k] = r.pts[i])); J.hr = r.hr;
@@ -2707,27 +2730,127 @@ function updateTexts(rdt) {
 const bubbles = [];
 const EMOJI_FONT = '"Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
 function shortNick(n) { n = String(n || '').replace(/^@/, ''); return n.length > 12 ? n.slice(0, 11) + '…' : n; }
+// v15: NO sentence text over heads - the line is SPOKEN (pre-rendered voice clip) and only a small emoji reaction shows
 function bubble(f, text, emo = '', o = {}) {
-  if (!f || (!f.alive && !o.dead)) return;
+  if (!f || (!f.alive && !o.dead)) return 0;
   const pri = o.pri || 1, i = bubbles.findIndex((b) => b.f === f);
-  if (i >= 0) { const b = bubbles[i]; if (!o.force && (b.pri > pri || b.t < 0.6)) return; bubbles.splice(i, 1); }
-  else if (!o.force && clock < (f.bubbleCD || 0) && pri < 3) return;
-  bubbles.push({ f, text, emo, t: 0, dur: o.dur || 1.5, pri });
+  if (i >= 0) { const b = bubbles[i]; if (!o.force && (b.pri > pri || b.t < 0.6)) return 0; }
+  else if (!o.force && clock < (f.bubbleCD || 0) && pri < 3) return 0;
+  const said = text && o.say !== false && f.alive ? sayLine(f, text, { force: pri >= 8, react: o.say !== 'must' && pri < 8 }) : 0;
+  if (!emo) return said;
+  if (i >= 0) bubbles.splice(bubbles.findIndex((b) => b.f === f), 1);
+  bubbles.push({ f, text: '', emo, t: 0, dur: Math.max(o.dur || 1.5, said ? said + 0.3 : 0), pri });
   f.bubbleCD = clock + (o.cd ?? 2.4);
+  return said;
 }
 const TAUNTS = [['taunt', ['COME ON!', 'IS THAT ALL?'], '😏'], ['chinWipe', ['THAT TICKLED!', 'IS THAT ALL?'], '😤'], ['neckCrack', ['WARMED UP!', 'MY TURN!'], '💪'], ['shrug', ['TOO EASY!', 'BORING!'], '🥱']];
+// v15: every spoken line lives here (+ ROASTS / GLOAT below). tools/make_vo.py renders each one per hero voice.
+// {T}/{N} = the speaker's team name / comment number, {O}/{ON} = the other team. No player names (can't be pre-recorded).
+const TALK = {
+  beg: ['{T} FANS HELP ME!', "SEND A ROSE OR I'M DONE!", 'TAP LIKES = MY HP!', 'COMMENT {N} TO SAVE ME!', "{T} FANS, DON'T LEAVE ME!", 'ONE GIFT AND I WIN THIS!'],
+  brag: ['{O} FANS, WHERE ARE YOU?', 'IS THAT ALL YOUR FANS? EASY!', 'COMMENT {ON} IF YOU DARE!', '{O} FANS ARE SLEEPING!', "SEND GIFTS, {O}... WON'T HELP!", 'TEAM {T} RUNS THIS LIVE!'],
+  rec: ['COMMENT {N} NOW!', 'I NEED FANS! COMMENT {N}!', 'TEAM {T}! COMMENT {N}!', 'TYPE {N} AND JOIN MY ARMY!'],
+  mid: ['TAP LIKES = MY HP!', 'SPAM {N} IN THE CHAT!', 'ROSES MAKE ME STRONGER!', 'WHO IS TEAM {T}? COMMENT {N}!', '{O} IS GOING DOWN!'],
+  king: ['MY TOP FAN IS HERE!', 'THANK YOU, MY KING!', "MY NUMBER ONE FAN! LET'S GO!"],
+  thanks: ['THANK YOU!', 'THANK YOU, MY KING!', 'THANKS FOR THE GIFT!', 'YOU ARE THE BEST!', 'NOW I AM UNSTOPPABLE!'],
+  giftS: ["THAT LITTLE GIFT WON'T SAVE YOU!", "A ROSE? I'M NOT SCARED!"],
+  giftM: ["THAT GIFT WON'T SAVE YOU!", 'NICE GIFT... STILL GOING DOWN!'],
+  giftB: ['WHOA, BIG GIFT! {T} FANS, ANSWER THAT!', 'BIG GIFT... STILL NOT ENOUGH!'],
+  giftAny: ['{T} FANS, SEND MORE!', 'MY FANS WILL BEAT THAT!'],
+  next: ['WHO WANTS NEXT ROUND?', 'NEXT ROUND! COMMENT 1 OR 2!', 'PICK A SIDE! 1 OR 2!'],
+  win: ['EZ!', 'TOO EASY!', "WHO'S NEXT?", 'GG!', 'BOW DOWN!'],
+  greply: ['FANS, SHOW HIM! COMMENT {N}!', 'TEAM {T}! SEND ROSES NOW!', "TAP LIKES! I'M NOT DONE!"],
+  cb: ["I'M NOT DONE YET!", 'THANKS FANS, NOW WATCH THIS!'],
+  shock: ['WHAT?!'],
+  parry: ['HA!', 'NICE TRY!', 'NOPE!'],
+  block: ['NOPE!', 'BLOCKED!', 'WEAK!'],
+  combo: ['TOO SLOW!', 'TOO EASY!', 'HAHA!', 'KEEP UP!'],
+  low: ['NOT YET...', 'STILL HERE!', 'HELP ME!'],
+  intro: ['COME ON!', 'IS THAT ALL?', "YOU'RE MINE!", "LET'S GO!"],
+  introReply: ['BRING IT!', 'WATCH THIS!', 'NO CHANCE!'],
+  taunt: [...new Set(TAUNTS.flatMap((x) => x[1]))]
+};
 function bodyTaunt(f) {
   const [mv, lines, emo] = pick(TAUNTS);
   f.mv = null; f.play(mv); bubble(f, pick(lines), emo, { pri: 1, dur: 1.4 });
 }
 // ---------- v14: VOICE LINES (pre-rendered neural TTS clips, never overlapping) ----------
-const VOS = { until: 0 };
-function sayVO(h, key, v = 1) {
-  if (!h || S.game.voice === false || clock < VOS.until) return false;
-  const k = 'vo_' + (h.team ? 'b' : 'w') + '_' + key, b = SB.buf[k] && SB.buf[k][0];
-  if (!MANUAL && !b) return false;
-  VOS.until = clock + (b ? b.duration : 1.6) + 0.25;
-  sfx(k, null, v); return true;
+// v15: each line is a clip in sounds/vo (key = hero + slug of the text, manifest in sounds/vo/lines.json with the length
+// and a 30 fps loudness envelope that drives the mouth). Clips are fetched in the background and decoded only when
+// needed (small cache), so the phone never holds all of them in memory. One voice at a time, never overlapping.
+const VOS = { until: 0, who: null, reactNext: 0 };
+const VO = { man: null, raw: {}, busy: {}, lru: [], dec: null };
+const voSlug = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48);
+const voKey = (team, text) => 'vo_' + (team ? 'b' : 'w') + '_' + voSlug(text);
+const voFree = () => clock >= VOS.until;
+async function voFetch(k, fmt) {
+  for (const ext of fmt === 'm4a' ? ['m4a', 'ogg'] : ['ogg', 'm4a']) { try { const r = await fetch('sounds/vo/' + k + '.' + ext); if (r.ok) return await r.arrayBuffer(); } catch (e) {} }
+  return null;
+}
+async function loadVO(dec, fmt) {
+  try {
+    VO.man = await (await fetch('sounds/vo/lines.json')).json();
+    const keys = Object.keys(VO.man.clips); VO.dec = dec; VO.fmt = fmt;
+    if (MANUAL) { await Promise.all(keys.map(async (k) => { const ab = await voFetch(k, fmt); if (ab) try { SB.buf[k] = [await dec(ab)]; } catch (e) {} })); return; }
+    (async () => { for (let i = 0; i < keys.length; i += 6) await Promise.all(keys.slice(i, i + 6).map(async (k) => { if (!VO.raw[k]) VO.raw[k] = await voFetch(k, fmt); })); })();
+  } catch (e) { VO.man = null; }
+}
+function voWarm(k) {
+  if (SB.buf[k]) return Promise.resolve(true);
+  if (!VO.dec) return Promise.resolve(false);
+  if (VO.busy[k]) return VO.busy[k];
+  const go = async () => {
+    let ab = VO.raw[k]; if (!ab) ab = VO.raw[k] = await voFetch(k, VO.fmt);
+    if (!ab) return false;
+    try { SB.buf[k] = [await VO.dec(ab.slice(0))]; } catch (e) { return false; }
+    VO.lru.push(k); while (VO.lru.length > 40) { const o = VO.lru.shift(); if (o !== k) delete SB.buf[o]; }
+    return true;
+  };
+  return (VO.busy[k] = go().finally(() => { delete VO.busy[k]; }));
+}
+// speak one line as hero h -> its length in seconds (0 = not spoken: no clip, voice off, or someone else talking)
+function sayLine(h, text, o = {}) {
+  if (!h || !text || S.game.voice === false || !VO.man) return 0;
+  const k = voKey(h.team, text), inf = VO.man.clips[k];
+  if (!inf) return 0;
+  if (!o.force && clock < VOS.until) return 0;
+  if (o.react) { if (clock < VOS.reactNext || Math.random() > 0.6) return 0; VOS.reactNext = clock + rand(3, 5); }
+  if (VOS.who && VOS.who !== h) VOS.who.talk = null;
+  VOS.until = clock + inf.d + 0.18; VOS.who = h;
+  const T = (h.talk = { t0: clock, d: inf.d, e: inf.e });
+  if (MANUAL || SB.buf[k]) sfx(k, null, o.v || 1);
+  else voWarm(k).then((ok) => { if (ok && h.talk === T && clock - T.t0 < 0.6) { T.t0 = clock; sfx(k, null, o.v || 1); } });
+  return inf.d;
+}
+function talkAmp(f) {   // 0..1 mouth opening from the clip's loudness envelope
+  const T = f.talk; if (!T) return 0;
+  const u = clock - T.t0; if (u > T.d) { f.talk = null; return 0; }
+  if (u < 0) return 0;
+  const e = T.e, x = u * 30, i = Math.min(e.length - 1, Math.floor(x)), j = Math.min(e.length - 1, i + 1), fr = x - Math.floor(x);
+  return clamp(((e.charCodeAt(i) - 48) * (1 - fr) + (e.charCodeAt(j) - 48) * fr) / 9, 0, 1);
+}
+// small HUD toast for names (thank-yous / top fan) - names are never spoken or drawn over heads
+const toasts = [];
+function toast(text, team) { const old = toasts.find((q) => q.text === text && q.team === team); if (old) { old.t0 = clock; return; } toasts.push({ text, team, t0: clock }); if (toasts.length > 3) toasts.shift(); }
+function drawToasts() {
+  for (let i = toasts.length - 1; i >= 0; i--) if (clock - toasts[i].t0 > 2.8) toasts.splice(i, 1);
+  if (!toasts.length) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const row = [0, 0];
+  for (const q of toasts) {
+    const u = clock - q.t0, a = clamp(Math.min(u / 0.2, (2.8 - u) / 0.4), 0, 1), T = TEAMS[q.team];
+    ctx.font = '40px Bangers, Impact, sans-serif';
+    const tw = ctx.measureText(q.text).width + 44, x = clamp(q.team ? W * 0.74 : W * 0.26, tw / 2 + 12, W - tw / 2 - 12), y = VIEW_TOP + 112 + row[q.team]++ * 60 - (1 - Math.min(1, u / 0.2)) * 14;
+    ctx.globalAlpha = a; ctx.fillStyle = T.panel; ctx.strokeStyle = T.ui; ctx.lineWidth = 3;
+    roundRect(x - tw / 2, y - 25, tw, 50, 25); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(q.text, x, y + 2);
+  }
+  ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
+}
+function ttThanks(h, nick, emo) {
+  if (nick) toast('💚 @' + shortNick(nick), h.team);
+  if (TT.seq.length || !voFree()) { bubble(h, '', emo, { pri: 4, dur: 1.4 }); return; }
+  ttSay(h, ttPick('thx', TALK.thanks), emo, { pri: 4 });
 }
 // ---------- v14: COMEBACK - the losing hero gets a burst of fan support while low on HP
 function checkComeback(h, before, got, nick) {
@@ -2751,10 +2874,9 @@ function comeback(h, foe, nick) {
   if (!h.busy() && h.onGround) HOLD(h, 'powerUp', 0.55, { tin: 0.12, tremble: true });
   if (foe.alive && !foe.busy()) foe.play('shrug');
   TT.queued = null;
-  TT.seq = [{ h, text: pick(["I'M NOT DONE YET!", 'THANKS FANS, NOW WATCH THIS!']), emo: '🔥', at: clock + 1.25, dur: 2.0, vo: null },
-            { h: foe, text: 'WHAT?!', emo: '😳', at: clock + 2.7, dur: 1.5, vo: 'shock' }];
-  TT.seq[0].vo = TT.seq[0].text.startsWith('THANKS') ? 'comeback2' : 'comeback';
-  VOS.until = 0; TT.next = clock + 6;
+  TT.seq = [{ h, text: pick(TALK.cb), emo: '🔥', at: clock + 1.25, force: true, pri: 8 },
+            { h: foe, text: TALK.shock[0], emo: '😳', gap: 0.2, force: true, pri: 8 }];
+  TT.next = clock + 6;
 }
 // ---------- v14: TRASH TALK that baits the audience into commenting / liking / gifting ----------
 // Playful, TikTok-safe lines only (no insults at real people). Each hero talks every 6-10 s at most,
@@ -2765,22 +2887,18 @@ function ttPick(key, list) {   // rotate: never the same line twice in a row per
 }
 function ttSub(x, t, n) {
   const o = 1 - t;
-  return x.replace(/\{T\}/g, TEAMS[t].name).replace(/\{O\}/g, TEAMS[o].name).replace(/\{N\}/g, String(t + 1)).replace(/\{ON\}/g, String(o + 1)).replace(/\{n\}/g, String(n));
+  return x.replace(/\{[TR]\}/g, TEAMS[t].name).replace(/\{O\}/g, TEAMS[o].name).replace(/\{[NR]N?\}/g, String(t + 1)).replace(/\{ON\}/g, String(o + 1));
 }
-function trashLine(h) {
+function trashLine(h) {   // -> [line, emoji, toast]
   const t = h.team, o = 1 - t, foe = heroOf(o);
   const r = h.hp / h.maxHp, fr = foe ? foe.hp / foe.maxHp : 1;
   const myFans = supportersOf(t).length, foeFans = supportersOf(o).length, top = topSupporters(t, 1)[0];
-  const sub = (x) => ttSub(x, t, foeFans);
-  // losing / low HP -> beg my fans
-  if (r < 0.45 && r < fr - 0.08) return [sub(ttPick('beg' + t, ['{T} FANS HELP ME!', "SEND A ROSE OR I'M DONE!", 'TAP LIKES = MY HP!', 'COMMENT {N} TO SAVE ME!', "{T} FANS, DON'T LEAVE ME!", 'ONE GIFT AND I WIN THIS!'])), pick(['😰', '🌹', '❤️', '🙏', '😭'])];
-  // winning -> brag at the other team's fans
-  if (r > fr + 0.15 || (foe && fr < 0.35)) return [sub(ttPick('brag' + t, ['{O} FANS, WHERE ARE YOU?', foeFans ? 'ONLY {n} FANS? EASY!' : '{O} HAS NO FANS? EASY!', 'COMMENT {ON} IF YOU DARE!', '{O} FANS ARE SLEEPING!', "SEND GIFTS, {O}... WON'T HELP!", 'TEAM {T} RUNS THIS LIVE!'])), pick(['😏', '😂', '💢', '😎', '🥱'])];
-  // fewer fans -> recruit
-  if (myFans < foeFans || myFans === 0) return [sub(ttPick('rec' + t, ['COMMENT {N} NOW!', 'I NEED FANS! COMMENT {N}!', 'TEAM {T}! COMMENT {N}!', 'TYPE {N} AND JOIN MY ARMY!'])), pick(['📣', '👊', '🔥', '💪'])];
-  // even fight -> shout-out the top fan or ask for likes
-  if (top && Math.random() < 0.4) return ['@' + shortNick(top.nick) + ' IS MY KING!', '👑'];
-  return [sub(ttPick('mid' + t, ['TAP LIKES = MY HP!', 'SPAM {N} IN THE CHAT!', 'ROSES MAKE ME STRONGER!', 'WHO IS TEAM {T}? COMMENT {N}!', '{O} IS GOING DOWN!'])), pick(['❤️', '🔥', '🌹', '💪', '😤'])];
+  const L = (cat) => ttSub(ttPick(cat + t, TALK[cat]), t);
+  if (r < 0.45 && r < fr - 0.08) return [L('beg'), pick(['😰', '🌹', '❤️', '🙏', '😭'])];                       // losing -> beg my fans
+  if (r > fr + 0.15 || (foe && fr < 0.35)) return [L('brag'), pick(['😏', '😂', '💢', '😎', '🥱'])];            // winning -> brag
+  if (myFans < foeFans || myFans === 0) return [L('rec'), pick(['📣', '👊', '🔥', '💪'])];                         // fewer fans -> recruit
+  if (top && Math.random() < 0.4) return [L('king'), '👑', '👑 @' + shortNick(top.nick)];                          // top fan shout-out (name in a HUD toast)
+  return [L('mid'), pick(['❤️', '🔥', '🌹', '💪', '😤'])];
 }
 // hero-vs-hero roast exchanges: [speaker team (-1 = either), line, emo, reply, emo]. {T}/{N} = the SPEAKER's team.
 // Replies use {R}/{RN} = the replier's team name / comment number. Most end in a call to action.
@@ -2808,51 +2926,47 @@ const ROASTS = [
 ];
 // winning hero GLOATS at the losing hero: short bubbles one after another, then the loser rallies his fans
 const GLOAT = [['NO ONE HERE TO SAVE YOU', '😏'], ['PATHETIC!', '🥱'], ['CALL YOUR MAMA AND CRY', '😭'], ['MAYBE I GO EASY ON YOU', '😈']];
-const GLOAT_REPLY = ['FANS, SHOW HIM! COMMENT {RN}!', 'TEAM {R}! SEND ROSES NOW!', 'TAP LIKES! I\'M NOT DONE!'];
 function trashGloat(w) {
   const l = heroOf(1 - w.team); if (!l) return false;
-  let t = clock; TT.seq = [];
-  const VO_G = ['gloat1', 'gloat2', 'gloat3', 'gloat4'], MV_G = ['taunt', 'chinWipe', 'shrug', 'taunt'];
-  GLOAT.forEach(([text, emo], i) => { TT.seq.push({ h: w, text, emo, at: t, dur: 1.75, vo: VO_G[i], mv: MV_G[i] }); t += i === 2 ? 1.9 : 1.6; });
-  const r = ttPick('gr', GLOAT_REPLY).replace(/\{R\}/g, TEAMS[l.team].name).replace(/\{RN\}/g, String(l.team + 1));
-  TT.seq.push({ h: l, text: r, emo: pick(['📣', '😤', '💢']), at: t - 0.3, dur: 2.4, vo: r.startsWith('FANS') ? 'rally' : null });
-  w.ttNext = clock + 14; l.ttNext = clock + 10; TT.next = t + 4; TT.last = w.team; TT.queued = null;
+  const MV_G = ['taunt', 'chinWipe', 'shrug', 'taunt'];
+  TT.seq = GLOAT.map(([text, emo], i) => ({ h: w, text, emo, mv: MV_G[i], at: i ? 0 : clock, gap: rand(0.15, 0.3) }));
+  TT.seq.push({ h: l, text: ttSub(ttPick('gr', TALK.greply), l.team), emo: pick(['📣', '😤', '💢']), gap: 0.35 });
+  w.ttNext = clock + 16; l.ttNext = clock + 12; TT.last = w.team; TT.queued = null;
   return true;
 }
 function trashExchange(a) {
   const b = heroOf(1 - a.team); if (!b) return false;
   const list = ROASTS.filter((x) => x[0] < 0 || x[0] === a.team);
   const x = list[(() => { let i = Math.floor(Math.random() * list.length); if (list.length > 1 && i === TT.used['ex' + a.team]) i = (i + 1) % list.length; TT.used['ex' + a.team] = i; return i; })()];
-  const rsub = (s_) => ttSub(s_, a.team, 0).replace(/\{R\}/g, TEAMS[b.team].name).replace(/\{RN\}/g, String(b.team + 1));
-  ttSay(a, rsub(x[1]), x[2], { dur: 2.6, force: true });
-  TT.queued = { h: b, text: rsub(x[3]), emo: x[4], at: clock + rand(1.5, 2.0), reply: true, dur: 2.6 };
-  TT.next = clock + rand(5, 6.5);
+  TT.seq = [{ h: a, text: ttSub(x[1], a.team), emo: x[2], at: clock }, { h: b, text: ttSub(x[3], b.team), emo: x[4], gap: rand(0.3, 0.6) }];
   return true;
 }
 const ttFree = (h) => !bubbles.some((b) => b.f.alive && b.t < b.dur && (!h || b.f === h));
-function ttSay(h, line, emo, o = {}) {
-  if (!h || !h.alive) return false;
-  bubble(h, line, emo, { pri: o.pri || 2, dur: o.dur || 2.2, force: !!o.force, cd: 2.4 });
-  h.ttNext = clock + rand(6, 10); TT.next = Math.max(TT.next, clock + rand(3, 4.5)); TT.last = h.team;
-  return true;
+function ttSay(h, line, emo, o = {}) {   // spoken line + emoji reaction (no text) -> its length (0 = not spoken)
+  if (!h || !h.alive) return 0;
+  const d = sayLine(h, line, { force: !!o.force });
+  bubble(h, '', emo, { pri: o.pri || 3, dur: Math.max(1.3, d + 0.3), force: true, cd: 2.4 });
+  if (o.toast) toast(o.toast, h.team);
+  h.ttNext = clock + rand(6, 10); TT.next = Math.max(TT.next, clock + (d || 1.4) + rand(2.2, 3.8)); TT.last = h.team;
+  return d;
 }
 function trashTalk() {
   if (G_().trashTalk === false) return;
-  // a queued reply / gift taunt goes first (a reply only needs ITS speaker to be free; bubbles stack, never overlap)
-  if (TT.seq.length) {   // gloat chain in progress
+  if (TT.seq.length) {   // a spoken sequence (roast + reply, gloat chain, comeback, gift mock): each line starts when the last one ends
     const q = TT.seq[0];
-    if (!q.h.alive || round.state !== 'fight') { TT.seq.length = 0; return; }
-    if (clock >= q.at) { TT.seq.shift(); bubble(q.h, q.text, q.emo, { pri: q.vo === 'comeback' || q.vo === 'comeback2' || q.vo === 'shock' ? 8 : 3, dur: q.dur, force: true }); if (q.vo) sayVO(q.h, q.vo); if (q.mv && !q.h.busy()) q.h.play(q.mv); }
+    if (!q.h.alive || (round.state !== 'fight' && !q.end)) { TT.seq.length = 0; return; }
+    if (clock >= (q.at || 0) && (q.force || voFree())) {
+      TT.seq.shift();
+      const d = ttSay(q.h, q.text, q.emo, { force: q.force, pri: q.pri || 3 });
+      if (q.mv && !q.h.busy()) q.h.play(q.mv);
+      if (TT.seq.length) TT.seq[0].at = Math.max(TT.seq[0].at || 0, clock + (d || 1.3) + (TT.seq[0].gap ?? 0.3));
+      else TT.next = Math.max(TT.next, clock + rand(3.5, 5.5));
+    } else if (clock > (q.at || 0) + 5) TT.seq.shift();   // never stuck
     return;
   }
-  if (TT.queued && clock >= TT.queued.at) {
-    const q = TT.queued;
-    if (clock > q.at + 4 || !q.h.alive) TT.queued = null;
-    else if (ttFree(q.reply ? q.h : null)) { TT.queued = null; bubble(q.h, q.text, q.emo, { pri: 3, dur: q.dur || 2.2, force: true }); q.h.ttNext = clock + rand(6, 10); TT.next = Math.max(TT.next, clock + 3.5); return; }
-  }
-  if (TT.queued || clock < TT.next || !ttFree() || duel.sp) return;
+  if (clock < TT.next || !voFree() || duel.sp) return;
   if (round.state === 'end') {
-    if (round.t > 3.2 && !round.ttNext) { round.ttNext = true; const w = heroOf(round.winner) || heroes.find((h) => h && h.alive); if (w) ttSay(w, ttPick('next', ['WHO WANTS NEXT ROUND?', 'NEXT ROUND! COMMENT 1 OR 2!', 'PICK A SIDE! 1 OR 2!']), '🔥', { dur: 2.4 }); }
+    if (round.t > 3.2 && !round.ttNext) { round.ttNext = true; const w = heroOf(round.winner) || heroes.find((h) => h && h.alive); if (w) ttSay(w, ttPick('next', TALK.next), '🔥'); }
     return;
   }
   if (round.state !== 'fight' || round.t < 3) return;
@@ -2860,19 +2974,17 @@ function trashTalk() {
   if (!cand.length) return;
   const h = cand.length > 1 ? (cand.find((c) => c.team !== TT.last) || cand[0]) : cand[0];
   const f_ = heroOf(1 - h.team);
-  if (f_ && h.hp / h.maxHp > f_.hp / f_.maxHp + 0.2 && Math.random() < 0.4 && trashGloat(h)) return;   // winner gloats (4 short bubbles) -> loser rallies
-  if (cand.length > 1 && Math.random() < 0.5 && trashExchange(h)) return;   // hero-vs-hero roast + reply   // hero-vs-hero roast + reply
-  const [line, emo] = trashLine(h);
-  ttSay(h, line, emo);
-  if (/FANS HELP ME/.test(line)) sayVO(h, 'beg'); else if (/WHERE ARE YOU|FANS\? EASY/.test(line)) sayVO(h, 'brag');
+  if (f_ && h.hp / h.maxHp > f_.hp / f_.maxHp + 0.2 && Math.random() < 0.4 && trashGloat(h)) return;   // winner gloats (4 spoken lines) -> loser rallies
+  if (cand.length > 1 && Math.random() < 0.5 && trashExchange(h)) return;                                // hero-vs-hero roast + spoken reply
+  const [line, emo, tst] = trashLine(h);
+  ttSay(h, line, emo, { toast: tst });
 }
-// gift reaction: the OTHER hero mocks it a moment later (after the thank-you bubble)
-function ttGift(team, giftName) {
-  if (G_().trashTalk === false || round.state !== 'fight' || TT.queued) return;
+// gift reaction: the OTHER hero mocks it right after (generic per gift size - names can't be pre-recorded)
+function ttGift(team, healAmt) {
+  if (G_().trashTalk === false || round.state !== 'fight' || TT.seq.length) return;
   const foe = heroOf(1 - team); if (!foe || Math.random() < 0.35) return;
-  const g = String(giftName || 'GIFT').split(/\s+/)[0].toUpperCase().slice(0, 10);
-  const text = ttPick('gift', [`THAT ${g} WON'T SAVE YOU!`, `A ${g}? I'M NOT SCARED!`, `${TEAMS[1 - team].name} FANS, SEND MORE!`, 'MY FANS WILL BEAT THAT!']);
-  TT.queued = { h: foe, text, emo: pick(['😤', '😏', '🙄', '💢']), at: clock + 1.9 };
+  const tier = Math.random() < 0.3 ? 'giftAny' : healAmt >= 60 ? 'giftB' : healAmt >= 20 ? 'giftM' : 'giftS';
+  TT.seq = [{ h: foe, text: ttSub(ttPick('gift', TALK[tier]), foe.team), emo: pick(['😤', '😏', '🙄', '💢']), at: clock + 1.9 }];
 }
 function updateBubbles(rdt) {
   for (const b of bubbles) b.t += rdt;
@@ -2967,11 +3079,11 @@ function drawWorldUI() {
   }
   for (const t of texts) {
     const p = w2s(t.x, t.y), a = clamp(t.life / t.max * 1.5, 0, 1), pop = 1 + Math.max(0, t.life - t.max + 0.12) * 4;
-    const y = clamp(p.y + t.oy, VIEW_TOP + 40, VIEW_BOT - 20), x = clamp(p.x, 90, W - 90);
+    const y = clamp(p.y + t.oy, VIEW_TOP + 80, VIEW_BOT - 20), x = clamp(p.x, 90, W - 90);
     ctx.globalAlpha = a; outlined(t.text, x, y, `${Math.round(t.size * pop * zk)}px Bangers, Impact, sans-serif`, t.color, '#000', 6);
   }
   ctx.globalAlpha = 1;
-  for (const p of planes) { const q = w2s(p.x - p.vx * 0.1, p.y - 70); outlined('AIRSTRIKE by ' + p.nick, clamp(q.x, 200, W - 200), clamp(q.y, VIEW_TOP + 40, VIEW_BOT), '28px Russo, Arial', '#ffd84a', '#000', 5); }
+  for (const p of planes) { const q = w2s(p.x - p.vx * 0.1, p.y - 70); outlined('AIRSTRIKE by ' + p.nick, clamp(q.x, 200, W - 200), clamp(q.y, VIEW_TOP + 80, VIEW_BOT), '28px Russo, Arial', '#ffd84a', '#000', 5); }
 }
 const WEAPON_NAMES = { sword: 'KATANA', pistol: 'PISTOL', rifle: 'RIFLE', fists: 'FISTS' };
 // ---------- cinematic overlays (screen space) ----------
@@ -3101,13 +3213,21 @@ function drawHUD() {
   // VS badge
   ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(W / 2, 260, 40, 0, TAU); ctx.fill(); ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 4; ctx.stroke();
   ctx.textAlign = 'center'; outlined('VS', W / 2, 276, '44px Bangers, Impact', '#ffd84a', '#000', 5);
-  // join strip
-  ctx.fillStyle = 'rgba(10,20,60,0.9)'; roundRect(20, 406, W - 40, 72, 36); ctx.fill(); ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 4; ctx.stroke();
-  const segs = [['COMMENT ', '#fff'], ['1', '#ffffff'], [' WHITE   ', '#e6ebf5'], ['2', '#ff4a4a'], [' BLACK ', '#ff4a4a'], ['  TO BE A FAN!', '#ffd84a']];
-  let fs = 46; ctx.font = `${fs}px Russo, Arial`; let tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width;
-  if (tw > W - 90) { fs = Math.floor(fs * (W - 90) / tw); ctx.font = `${fs}px Russo, Arial`; tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width; }
-  let sx = W / 2 - tw / 2; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
-  for (const s of segs) { ctx.strokeStyle = '#000'; ctx.lineWidth = 7; ctx.strokeText(s[0], sx, 458); ctx.fillStyle = s[1]; ctx.fillText(s[0], sx, 458); sx += ctx.measureText(s[0]).width; }
+  // join strip (v15): two clear steps - 1) pick a hero by comment, 2) support with gifts & likes. Sits in the sky band, never over the fighters
+  ctx.fillStyle = 'rgba(10,20,60,0.9)'; roundRect(20, 404, W - 40, 114, 30); ctx.fill(); ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 4; ctx.stroke();
+  const stripLine = (segs, y, fs0) => {
+    let fs = fs0; ctx.font = `${fs}px Russo, Arial`; let tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width;
+    if (tw > W - 84) { fs = Math.floor(fs * (W - 84) / tw); ctx.font = `${fs}px Russo, Arial`; tw = 0; for (const s of segs) tw += ctx.measureText(s[0]).width; }
+    let sx = W / 2 - tw / 2; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+    for (const s of segs) {
+      ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(5, fs * 0.17); ctx.strokeText(s[0], sx, y);
+      if (s[2]) { ctx.save(); ctx.shadowColor = s[2]; ctx.shadowBlur = 10; }
+      ctx.fillStyle = s[1]; ctx.fillText(s[0], sx, y); if (s[2]) ctx.restore();
+      sx += ctx.measureText(s[0]).width;
+    }
+  };
+  stripLine([['CHOOSE YOUR HERO:  ', '#ffd84a'], ['COMMENT 1 = WHITE', '#ffffff', 'rgba(255,255,255,0.55)'], ['  |  ', '#9aa6c8'], ['COMMENT 2 = ', '#ff4a4a'], ['BLACK', '#ffffff', 'rgba(255,40,30,0.95)']], 455, 40);
+  stripLine([['THEN SUPPORT THEM WITH ', '#ffffff'], ['GIFTS \u{1F381}', '#ffd84a'], ['  &  ', '#ffffff'], ['LIKES \u2764\uFE0F', '#ff7ab0']], 503, 36);
   // bottom panels
   const py = VIEW_BOT;
   ctx.fillStyle = 'rgba(5,8,22,0.9)'; ctx.fillRect(0, py - 4, W, H - py + 4);
@@ -3291,7 +3411,7 @@ const WX = { on: !QS.has('noweather'), drops: [], spl: [], boost: 0, k: 0.6, nex
 const scl = document.createElement('canvas'); scl.width = CLW; scl.height = Math.round(HZ * 0.75 + BGM);
 function buildStorm() {
   WX.on = S.game.weather !== false && !QS.has('noweather');
-  const c = scl.getContext('2d'), r = seeded(777); c.translate(0, BGM);
+  const c = scl.getContext('2d'), r = seeded(777); c.translate(0, BGM); try { c.filter = 'blur(5px)'; } catch (e) {}   // soft cloud edges (built once)
   for (let i = 0; i < 26; i++) {
     const y = 180 + r() * (HZ * 0.75 - 380), x = r() * CLW, w = 380 + r() * 520, h = 60 + r() * 70;
     for (const ox of [0, -CLW, CLW]) {
@@ -3332,7 +3452,8 @@ function updateWeather(rdt) {
 }
 function newDrop(any) {
   const gy = w2s(W / 2, FLOOR).y;
-  return { x: rand(0, W + 260), y: any ? rand(VIEW_TOP, VIEW_BOT) : VIEW_TOP - rand(0, 120), vx: -260, vy: rand(1500, 1900), l: rand(26, 46), gy: rand(gy - 30, VIEW_BOT + 20) };
+  const z = Math.random();   // depth: far drops are thin, slow, short; near drops bright and long
+  return { x: rand(0, W + 260), y: any ? rand(VIEW_TOP, VIEW_BOT) : VIEW_TOP - rand(0, 120), z, vx: -170 - z * 140, vy: 1150 + z * 900 + rand(0, 150), l: 16 + z * 40, gy: z < 0.45 ? rand(gy - 60, gy + 30) : rand(gy - 30, VIEW_BOT + 20) };
 }
 function makeBolt() {
   const pts = []; let x = rand(120, W - 120), y = VIEW_TOP;
@@ -3344,8 +3465,15 @@ function drawStormSky() {   // in the parallax transform, over the static sky + 
   if (!WX.on) return;
   ctx.globalAlpha = 0.28 + 0.2 * WX.k; ctx.fillStyle = '#1a0f2a'; ctx.fillRect(-BGM, -BGM, W + BGM * 2, HZ + BGM - 260);   // darker top, horizon glow kept
   ctx.globalAlpha = 0.55 + 0.35 * WX.k;
-  const d = (clock * 22) % CLW;
+  const d = (clock * 22) % CLW, d2 = (clock * 9 + 600) % CLW;
   ctx.drawImage(scl, -BGM - d, -BGM); ctx.drawImage(scl, -BGM - d + CLW, -BGM);
+  ctx.globalAlpha = 0.3 + 0.2 * WX.k;   // slower far layer (parallax depth)
+  ctx.drawImage(scl, -BGM - d2, -BGM - 120, CLW, scl.height * 0.8); ctx.drawImage(scl, -BGM - d2 + CLW, -BGM - 120, CLW, scl.height * 0.8);
+  if (WX.flash > 0.05) {   // lightning lights the clouds from inside
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35 * WX.flash;
+    ctx.drawImage(scl, -BGM - d, -BGM); ctx.drawImage(scl, -BGM - d + CLW, -BGM);
+    ctx.globalCompositeOperation = 'source-over';
+  }
   ctx.globalAlpha = 1;
 }
 function drawRain() {   // screen space, clipped to the game window (never over the HUD)
@@ -3359,10 +3487,13 @@ function drawRain() {   // screen space, clipped to the game window (never over 
       ctx.beginPath(); WX.bolt.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.shadowBlur = 0;
     }
   }
-  ctx.strokeStyle = `rgba(205,215,255,${0.28 + 0.12 * WX.k})`; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  ctx.beginPath();
-  for (const d of WX.drops) { const k = d.l / d.vy; ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.vx * k, d.y - d.l); }
-  ctx.stroke();
+  ctx.lineCap = 'round';
+  for (const [z0, z1, lw, al] of [[0, 0.45, 1.2, 0.16], [0.45, 0.8, 1.9, 0.26], [0.8, 1.01, 2.7, 0.36]]) {   // 3 depth layers, one batched stroke each
+    ctx.strokeStyle = `rgba(210,220,255,${al + 0.1 * WX.k + 0.25 * WX.flash})`; ctx.lineWidth = lw;
+    ctx.beginPath();
+    for (const d of WX.drops) { if (d.z < z0 || d.z >= z1) continue; const k = d.l / d.vy; ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.vx * k, d.y - d.l); }
+    ctx.stroke();
+  }
   ctx.strokeStyle = 'rgba(225,230,255,0.55)'; ctx.lineWidth = 2;
   ctx.beginPath();
   for (const p of WX.spl) { const r = 4 + p.t * 60; ctx.moveTo(p.x + r, p.y); ctx.ellipse(p.x, p.y, r, r * 0.3, 0, 0, TAU); }
@@ -3407,7 +3538,7 @@ function render() {
   // screen space from here on
   drawOverlays();
   drawWorldUI();
-  drawBubbles();
+  drawBubbles(); drawToasts();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (cam.flash > 0) { ctx.globalAlpha = Math.min(0.6, cam.flash); ctx.fillStyle = cam.flashColor; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   if (timeCtl.slowT > 0 || cam.ko) {   // cinematic letterbox during slow motion
@@ -3745,7 +3876,11 @@ async function boot() {
     mostHurt: () => { let b = -1, bh = 1e9; for (let t = 0; t < NT; t++) { const h = heroOf(t); if (h && h.hp < bh) { bh = h.hp; b = t; } } return b; },
     sp: (name, first = 0, force = false) => { const a = heroOf(first), b = heroOf(1 - first); if (a && b && !duel.sp && round.state === 'fight' && [a, b].every((f) => f.onGround && !f.busy() && !f.held && f.invuln <= 0)) { const o = setPieceOptions2(a, b).find((c) => c.name === name); if (!o && !force) return false; startSetPiece(name, o && !force ? o.a : a, o && !force ? o.b : b); return true; } return false; },
     cam, duel, timeCtl, ready: true, soundsReady: () => loadSamples(), bubble, audioLogAll: () => AU.log,
-    tt: { state: TT, exchange: (t = 0) => trashExchange(heroOf(t)), gloat: (t = 0) => trashGloat(heroOf(t)), line: (t = 0) => { const h = heroOf(t); if (!h) return null; const [l, e] = trashLine(h); ttSay(h, l, e, { force: true }); return l; }, roasts: ROASTS }
+    tt: { state: TT, exchange: (t = 0) => trashExchange(heroOf(t)), gloat: (t = 0) => trashGloat(heroOf(t)), line: (t = 0) => { const h = heroOf(t); if (!h) return null; const [l, e, tst] = trashLine(h); ttSay(h, l, e, { force: true, toast: tst }); return l; }, roasts: ROASTS, voFree, vo: () => VO.man && Object.keys(VO.man.clips).length },
+    voCatalog: () => { const out = [], add = (cat, list, tt = [0, 1]) => { for (const x of list) for (const t of tt) out.push({ cat, team: t, text: ttSub(x, t) }); };
+      for (const [k, v] of Object.entries(TALK)) add(k, v);
+      ROASTS.forEach((r) => { add('roastA', [r[1]], r[0] < 0 ? [0, 1] : [r[0]]); add('roastB', [r[3]], r[0] < 0 ? [0, 1] : [1 - r[0]]); });
+      GLOAT.forEach((g) => add('gloat', [g[0]], [0, 1])); return out; },
   };
   if (QS.has('ttdemo')) {   // screenshot hook: fans + HP gap, then force trash talk
     const mode = QS.get('ttdemo');

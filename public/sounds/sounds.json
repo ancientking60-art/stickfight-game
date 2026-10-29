@@ -1,204 +1,138 @@
 {
-"punch": [
-"punch_1.ogg",
-"punch_2.ogg",
-"punch_3.ogg",
-"punch_4.ogg",
-"punch_5.ogg",
-"punch_6.ogg",
-"punch_7.ogg"
-],
-"body": [
-"body_1.ogg",
-"body_2.ogg",
-"body_3.ogg",
-"body_4.ogg",
-"body_5.ogg"
-],
-"kick": [
-"kick_1.ogg",
-"kick_2.ogg",
-"kick_3.ogg",
-"kick_4.ogg"
-],
-"block": [
-"block_1.ogg",
-"block_2.ogg",
-"block_3.ogg",
-"block_4.ogg",
-"block_5.ogg"
-],
-"whoosh": [
-"whoosh_1.ogg",
-"whoosh_2.ogg",
-"whoosh_3.ogg",
-"whoosh_4.ogg",
-"whoosh_5.ogg"
-],
-"whooshH": [
-"whooshH_1.ogg",
-"whooshH_2.ogg",
-"whooshH_3.ogg",
-"whooshH_4.ogg",
-"whooshH_5.ogg"
-],
-"step": [
-"step_1.ogg",
-"step_2.ogg",
-"step_3.ogg",
-"step_4.ogg",
-"step_5.ogg",
-"step_6.ogg"
-],
-"fall": [
-"fall_1.ogg",
-"fall_2.ogg",
-"fall_3.ogg",
-"fall_4.ogg"
-],
-"effort": [
-"effort_1.ogg",
-"effort_2.ogg",
-"effort_3.ogg",
-"effort_4.ogg",
-"effort_5.ogg",
-"effort_6.ogg",
-"effort_7.ogg",
-"effort_8.ogg"
-],
-"pain": [
-"pain_1.ogg",
-"pain_2.ogg",
-"pain_3.ogg",
-"pain_4.ogg",
-"pain_5.ogg",
-"pain_6.ogg",
-"pain_7.ogg",
-"pain_8.ogg",
-"pain_9.ogg",
-"pain_10.ogg"
-],
-"sword": [
-"sword_1.ogg",
-"sword_2.ogg",
-"sword_3.ogg",
-"sword_4.ogg",
-"sword_5.ogg"
-],
-"clash": [
-"clash_1.ogg",
-"clash_2.ogg",
-"clash_3.ogg",
-"clash_4.ogg",
-"clash_5.ogg"
-],
-"scrape": [
-"scrape_1.ogg",
-"scrape_2.ogg"
-],
-"reload": [
-"reload_1.ogg",
-"reload_2.ogg"
-],
-"gun": [
-"gun_1.ogg",
-"gun_2.ogg",
-"gun_3.ogg",
-"gun_4.ogg",
-"gun_5.ogg"
-],
-"casing": [
-"casing_1.ogg",
-"casing_2.ogg"
-],
-"boom": [
-"boom_1.ogg",
-"boom_2.ogg"
-],
-"cheer": [
-"cheer_1.ogg"
-],
-"crowd": [
-"crowd_1.ogg",
-"crowd_2.ogg"
-],
-"applause": [
-"applause_1.ogg"
-],
-"wind": [
-"wind_1.ogg"
-],
-"vo_b_beg": [
-"vo_b_beg.ogg"
-],
-"vo_b_brag": [
-"vo_b_brag.ogg"
-],
-"vo_b_comeback": [
-"vo_b_comeback.ogg"
-],
-"vo_b_comeback2": [
-"vo_b_comeback2.ogg"
-],
-"vo_b_gloat1": [
-"vo_b_gloat1.ogg"
-],
-"vo_b_gloat2": [
-"vo_b_gloat2.ogg"
-],
-"vo_b_gloat3": [
-"vo_b_gloat3.ogg"
-],
-"vo_b_gloat4": [
-"vo_b_gloat4.ogg"
-],
-"vo_b_rally": [
-"vo_b_rally.ogg"
-],
-"vo_b_shock": [
-"vo_b_shock.ogg"
-],
-"vo_b_win": [
-"vo_b_win.ogg"
-],
-"vo_w_beg": [
-"vo_w_beg.ogg"
-],
-"vo_w_brag": [
-"vo_w_brag.ogg"
-],
-"vo_w_comeback": [
-"vo_w_comeback.ogg"
-],
-"vo_w_comeback2": [
-"vo_w_comeback2.ogg"
-],
-"vo_w_gloat1": [
-"vo_w_gloat1.ogg"
-],
-"vo_w_gloat2": [
-"vo_w_gloat2.ogg"
-],
-"vo_w_gloat3": [
-"vo_w_gloat3.ogg"
-],
-"vo_w_gloat4": [
-"vo_w_gloat4.ogg"
-],
-"vo_w_rally": [
-"vo_w_rally.ogg"
-],
-"vo_w_shock": [
-"vo_w_shock.ogg"
-],
-"vo_w_win": [
-"vo_w_win.ogg"
-],
-"rain": [
-"rain_1.ogg"
-],
-"thunder": [
-"thunder_1.ogg",
-"thunder_2.ogg"
-]
+ "punch": [
+  "punch_1.ogg",
+  "punch_2.ogg",
+  "punch_3.ogg",
+  "punch_4.ogg",
+  "punch_5.ogg",
+  "punch_6.ogg",
+  "punch_7.ogg"
+ ],
+ "body": [
+  "body_1.ogg",
+  "body_2.ogg",
+  "body_3.ogg",
+  "body_4.ogg",
+  "body_5.ogg"
+ ],
+ "kick": [
+  "kick_1.ogg",
+  "kick_2.ogg",
+  "kick_3.ogg",
+  "kick_4.ogg"
+ ],
+ "block": [
+  "block_1.ogg",
+  "block_2.ogg",
+  "block_3.ogg",
+  "block_4.ogg",
+  "block_5.ogg"
+ ],
+ "whoosh": [
+  "whoosh_1.ogg",
+  "whoosh_2.ogg",
+  "whoosh_3.ogg",
+  "whoosh_4.ogg",
+  "whoosh_5.ogg"
+ ],
+ "whooshH": [
+  "whooshH_1.ogg",
+  "whooshH_2.ogg",
+  "whooshH_3.ogg",
+  "whooshH_4.ogg",
+  "whooshH_5.ogg"
+ ],
+ "step": [
+  "step_1.ogg",
+  "step_2.ogg",
+  "step_3.ogg",
+  "step_4.ogg",
+  "step_5.ogg",
+  "step_6.ogg"
+ ],
+ "fall": [
+  "fall_1.ogg",
+  "fall_2.ogg",
+  "fall_3.ogg",
+  "fall_4.ogg"
+ ],
+ "effort": [
+  "effort_1.ogg",
+  "effort_2.ogg",
+  "effort_3.ogg",
+  "effort_4.ogg",
+  "effort_5.ogg",
+  "effort_6.ogg",
+  "effort_7.ogg",
+  "effort_8.ogg"
+ ],
+ "pain": [
+  "pain_1.ogg",
+  "pain_2.ogg",
+  "pain_3.ogg",
+  "pain_4.ogg",
+  "pain_5.ogg",
+  "pain_6.ogg",
+  "pain_7.ogg",
+  "pain_8.ogg",
+  "pain_9.ogg",
+  "pain_10.ogg"
+ ],
+ "sword": [
+  "sword_1.ogg",
+  "sword_2.ogg",
+  "sword_3.ogg",
+  "sword_4.ogg",
+  "sword_5.ogg"
+ ],
+ "clash": [
+  "clash_1.ogg",
+  "clash_2.ogg",
+  "clash_3.ogg",
+  "clash_4.ogg",
+  "clash_5.ogg"
+ ],
+ "scrape": [
+  "scrape_1.ogg",
+  "scrape_2.ogg"
+ ],
+ "reload": [
+  "reload_1.ogg",
+  "reload_2.ogg"
+ ],
+ "gun": [
+  "gun_1.ogg",
+  "gun_2.ogg",
+  "gun_3.ogg",
+  "gun_4.ogg",
+  "gun_5.ogg"
+ ],
+ "casing": [
+  "casing_1.ogg",
+  "casing_2.ogg"
+ ],
+ "boom": [
+  "boom_1.ogg",
+  "boom_2.ogg"
+ ],
+ "cheer": [
+  "cheer_1.ogg"
+ ],
+ "crowd": [
+  "crowd_1.ogg",
+  "crowd_2.ogg"
+ ],
+ "applause": [
+  "applause_1.ogg"
+ ],
+ "wind": [
+  "wind_1.ogg"
+ ],
+ "rain": [
+  "rain_1.ogg"
+ ],
+ "thunder": [
+  "thunder_1.ogg",
+  "thunder_2.ogg"
+ ]
 }
