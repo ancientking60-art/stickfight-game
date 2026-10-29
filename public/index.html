@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>STICK WAR LIVE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  @font-face { font-family: 'Bangers'; src: url('fonts/Bangers-Regular.ttf'); }
+  @font-face { font-family: 'Russo'; src: url('fonts/RussoOne-Regular.ttf'); }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: 'Russo', Arial, sans-serif; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { background: #05060d; height: 100vh; width: calc(100vh * 9 / 16); max-width: 100vw; max-height: calc(100vw * 16 / 9); display: block; }
+  #sim { position: fixed; top: 8px; right: 8px; width: 230px; max-height: calc(100vh - 16px); overflow-y: auto;
+         background: rgba(10,14,30,.92); border: 1px solid #2a6cff; border-radius: 10px; padding: 8px; color: #dfe8ff; font-size: 12px; z-index: 5;
+         box-shadow: 0 0 18px rgba(40,120,255,.35); }
+  #sim.hidden { display: none; }
+  #sim h3 { margin: 2px 0 6px; font-size: 14px; color: #7fb2ff; letter-spacing: 1px; }
+  #sim .row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  #sim button { flex: 1 1 auto; background: #13204a; color: #fff; border: 1px solid #2f5bd8; border-radius: 6px; padding: 5px 6px;
+                font: 11px 'Russo', Arial, sans-serif; cursor: pointer; }
+  #sim button:hover { background: #1d3270; }
+  #sim button.on { background: #1f8a3b; border-color: #3fdc6a; }
+  #sim .b0 { background: #111; border-color: #888; } #sim .b1 { background: #eee; color: #000; } #sim .b2 { background: #b11; border-color: #f55; }
+  #sim small { color: #8ea3d6; display: block; margin-top: 4px; line-height: 1.4; }
+  #sim select { width: 100%; margin-bottom: 4px; background: #0c1430; color: #fff; border: 1px solid #2f5bd8; border-radius: 6px; padding: 3px; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1080" height="1920"></canvas></div>
+<div id="sim">
+  <h3>TEST BUTTONS (press H to hide)</h3>
+  <div class="row">
+    <button class="b1" data-join="0">+ White fan (1)</button>
+    <button class="b0" data-join="1">+ Black fan (2)</button>
+  </div>
+  <div>Gifts / likes come from:</div>
+  <select id="simTeam">
+    <option value="r">a random fan</option>
+    <option value="0">a White fan</option>
+    <option value="1">a Black fan</option>
+  </select>
+  <div class="row" id="giftBtns"></div>
+  <div class="row">
+    <button id="likeBtn">10 Likes (L)</button>
+    <button id="followBtn">Follow (F)</button>
+    <button id="shareBtn">Share (S)</button>
+  </div>
+  <div class="row">
+    <button id="autoBtn">Auto demo (A)</button>
+  </div>
+  <div class="row">
+    <button id="soundBtn">Sound (M)</button>
+    <button id="newRoundBtn">New round (N)</button>
+  </div>
+  <small>Keys: 1 new White fan, 2 new Black fan, Q W E R T Y U = gifts, L likes, F follow, S share, A auto demo, N new round, H hide this box.<br>
+  <span id="liveInfo">-</span></small>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

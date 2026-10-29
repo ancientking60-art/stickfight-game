@@ -1,0 +1,37 @@
+STICK WAR LIVE - sound effects
+==============================
+All sound files in this folder were cut, trimmed, normalised and converted to OGG from the
+packs below. Every pack used is released under CC0 1.0 (public domain dedication):
+free for commercial use, no attribution required. https://creativecommons.org/publicdomain/zero/1.0/
+(Credits are listed anyway, as thanks.) Downloaded from OpenGameArt.org on 29 Oct 2026.
+
+file group      source pack (author) - URL
+-----------     ------------------------------------------------------------------
+punch_*, body_*, kick_*
+                "37 hits/punches" (qubodup) - https://opengameart.org/content/37-hitspunches
+block_*         "10 impact/shield blocks" (StarNinjas) - https://opengameart.org/content/10-impactshield-blocks
+fall_*          "12 wet towel hitting/falling/punching floor sounds" (qubodup) - https://opengameart.org/content/12-wet-towel-hittingfallingpunching-floor-sounds
+pain_*          "Grunts: male death and pain" (thebardofblasphemy) - https://opengameart.org/content/grunts-male-death-and-pain
+                + "Man hurt sounds" (Aharabada) - https://opengameart.org/content/man-hurt-sounds
+effort_*        "15 vocal male strain/hurt/pain/jump sounds" (qubodup) - https://opengameart.org/content/15-vocal-male-strainhurtpainjump-sounds
+sword_*         "20 sword sound effects (attacks and clashes)" (StarNinjas) - https://opengameart.org/content/20-sword-sound-effects-attacks-and-clashes
+clash_*         same pack as above (sword_clash files)
+scrape_*, reload_*
+                "Metal interactions" (qubodup) - https://opengameart.org/content/metal-interactions
+gun_*           "25 CC0 bang / firework SFX" (rubberduck) - https://opengameart.org/content/25-cc0-bang-firework-sfx
+                + "Gunshots" (kurt) - https://opengameart.org/content/gunshots
+casing_*        "100 CC0 SFX" (rubberduck) - https://opengameart.org/content/100-cc0-sfx
+boom_*          "Chunky Explosion" (Joth) - https://opengameart.org/content/chunky-explosion
+                + "25 CC0 bang / firework SFX" (rubberduck, cannon) - see above
+whoosh_*, whooshH_*
+                "Swishes sound pack" (artisticdude) - https://opengameart.org/content/swishes-sound-pack
+step_*          "Fantozzi's footsteps (grass/sand & stone)" (qubodup / Fantozzi) - https://opengameart.org/content/fantozzis-footsteps-grasssand-stone
+crowd_*         "Crowd shouting/speaking ambience" (StarNinjas) - https://opengameart.org/content/crowd-shoutingspeaking-ambience
+cheer_*         "Cheers" (Nocturnal_Vanguard / AuraVoice) - https://opengameart.org/content/cheers-0
+applause_*      "Applause in a large hall or church" (eXpl0it3r) - https://opengameart.org/content/applause-in-a-large-hall-or-church
+wind_*          "Mild wind background noise" (Bashar3A) - https://opengameart.org/content/mild-wind-background-noise
+
+Not used on purpose: a gunshot pack whose readme said CC-BY 3.0 (attribution needed) and
+packs with mixed licences.
+The countdown beeps, power-up, heal, aura hum, teleport zap and plane sounds are still made
+by the game's built-in synth (no files).

@@ -1,0 +1,19 @@
+{
+  "tiktokUsername": "",
+  "port": 3000,
+  "openBrowser": false,
+  "signApiKey": "",
+  "game": {
+    "roundSeconds": 170,
+    "heroHp": 450,
+    "healScale": "auto",
+    "fighterSize": 0.66,
+    "damage": 1,
+    "suddenDeathDamage": 2,
+    "slowMotion": true,
+    "sound": true,
+    "volume": 0.8,
+    "unjoinedGiftRule": "weakest",
+    "title": "STICK WAR LIVE"
+  }
+}

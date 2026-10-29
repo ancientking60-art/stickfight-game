@@ -1,0 +1,19 @@
+{
+  "name": "stickfight-live",
+  "version": "1.0.0",
+  "description": "Stick Man Team Battle - interactive TikTok LIVE game",
+  "type": "module",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "check": "node server.js --check"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tiktok-live-connector": "^2.5.0",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "_help": "heal = HP added to the sender's hero (x number of gifts). power = sword, super (kung fu), pistol, rifle, airstrike, giant, ultimate (giant + airstrike), boost (rage). Gifts not in the list use byCoins (the gift's coin price).",
+
+  "joinWords": {
+    "white": ["white", "1", "team white"],
+    "black": ["black", "2", "team black"]
+  },
+
+  "likes":  { "every": 10, "heal": 2 },
+  "follow": { "heal": 5 },
+  "share":  { "heal": 5 },
+  "maxShieldPercent": 150,
+
+  "gifts": {
+    "Rose":           { "heal": 8 },
+    "TikTok":         { "heal": 8 },
+    "GG":             { "heal": 8 },
+    "Ice Cream Cone": { "heal": 8 },
+    "Heart Me":       { "heal": 8 },
+    "Finger Heart":   { "heal": 15,  "power": "sword" },
+    "Rosa":           { "heal": 20,  "power": "super" },
+    "Perfume":        { "heal": 25,  "power": "super" },
+    "Doughnut":       { "heal": 30,  "power": "super" },
+    "Hand Hearts":    { "heal": 40,  "power": "pistol" },
+    "Confetti":       { "heal": 40,  "power": "pistol" },
+    "Corgi":          { "heal": 60,  "power": "rifle" },
+    "Money Gun":      { "heal": 70,  "power": "rifle" },
+    "Galaxy":         { "heal": 100, "power": "airstrike" },
+    "Lion":           { "heal": 150, "power": "ultimate" },
+    "Universe":       { "heal": 150, "power": "ultimate" }
+  },
+
+  "byCoins": [
+    { "min": 1,     "max": 1,        "heal": 8 },
+    { "min": 2,     "max": 9,        "heal": 12,  "power": "sword" },
+    { "min": 10,    "max": 99,       "heal": 25,  "power": "super" },
+    { "min": 100,   "max": 299,      "heal": 40,  "power": "pistol" },
+    { "min": 300,   "max": 999,      "heal": 60,  "power": "rifle" },
+    { "min": 1000,  "max": 9999,     "heal": 100, "power": "airstrike" },
+    { "min": 10000, "max": 99999999, "heal": 150, "power": "ultimate" }
+  ]
+}
