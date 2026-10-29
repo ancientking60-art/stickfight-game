@@ -111,11 +111,29 @@ const server = http.createServer((req, res) => {
 });
 
 // ---------------------------------------------------------------- TikTok sessions (one per username)
+// tiktok-live-connector 2.x (tiktok-live-proto v3) shape: d.user = { id, displayId (= @name), nickname, secUid };
+// older 1.x shape: d.uniqueId / d.userId / d.nickname at the top level. Accept both.
 function who(data) {
-  const u = data?.user || {};
-  const id = String(u.uniqueId || u.userId || data?.userId || 'viewer');
-  const nick = String(u.nickname || u.uniqueId || 'viewer').slice(0, 18);
+  const d = data || {}, u = d.user || {};
+  const name = u.uniqueId || u.displayId || u.username || d.uniqueId || '';
+  const id = String(name || u.userId || u.id || u.idStr || d.userId || u.secUid || u.nickname || d.nickname || 'viewer');
+  const nick = String(u.nickname || d.nickname || name || 'viewer').slice(0, 18);
   return { id, nick };
+}
+const num = (...v) => { for (const x of v) { const n = Number(x); if (x !== undefined && x !== null && x !== '' && Number.isFinite(n)) return n; } return 0; };
+// one raw sample of each event type in the log (truncated) - for debugging field names
+const SAMPLED = new Set();
+function sample(user, type, d) {
+  if (SAMPLED.has(type)) return; SAMPLED.add(type);
+  try {
+    const seen = new WeakSet();
+    const j = JSON.stringify(d, (k, v) => {
+      if (k === 'common' || /image|avatar|icon|badge|Effect|monitor/i.test(k)) return undefined;
+      if (typeof v === 'object' && v) { if (seen.has(v)) return undefined; seen.add(v); }
+      return typeof v === 'bigint' ? String(v) : v;
+    });
+    console.log(`[${user}] sample ${type}:`, (j || '').slice(0, 700));
+  } catch (e) { console.log(`[${user}] sample ${type}: (unprintable)`, e?.message); }
 }
 const send = (ws, msg) => { if (ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
 
@@ -180,31 +198,34 @@ class Session {
     const conn = this.conn = new TikTokLiveConnection(this.user, options);
     const B = (m) => { if (this.conn === conn) this.broadcast(m); };
 
-    conn.on(WebcastEvent.CHAT, (d) => B({ type: 'chat', ...who(d), text: String(d.comment || '') }));
+    conn.on(WebcastEvent.CHAT, (d) => { sample(this.user, 'chat', d); B({ type: 'chat', ...who(d), text: String(d.content ?? d.comment ?? d.text ?? '') }); });
     conn.on(WebcastEvent.GIFT, (d) => {
+      sample(this.user, 'gift', d);
       const u = who(d);
-      const g = d.giftDetails || {};
+      const g = d.gift || d.giftDetails || {};          // v3: d.gift = { id, name, diamondCount, type }; 1.x: d.giftDetails
       const ext = d.extendedGiftInfo || {};
-      const giftName = String(g.giftName || ext.name || `Gift ${d.giftId}`);
-      const coins = Number(g.diamondCount || ext.diamond_count || 1);
-      const giftType = Number(g.giftType ?? ext.type ?? 0);
-      const total = Math.max(1, Number(d.repeatCount || 1));
+      const gid = d.giftId || g.id || ext.id || '';
+      const giftName = String(g.name || g.giftName || ext.name || d.giftName || `Gift ${gid}`);
+      const coins = Math.max(1, num(g.diamondCount, g.diamond_count, ext.diamond_count, ext.diamondCount, d.diamondCount, 1));
+      const giftType = num(g.type, g.giftType, ext.type, d.giftType, 0);
+      const total = Math.max(1, num(d.repeatCount, d.comboCount, d.groupCount, 1));
       let count = total;
       if (giftType === 1) {
         // streakable gift: events repeat with growing repeatCount; only send the new ones
-        const key = `${u.id}|${d.giftId}|${d.groupId || ''}`;
+        const key = `${u.id}|${gid}|${d.groupId || ''}`;
         const seen = this.streaks.get(key) || 0;
         count = total - seen;
         if (d.repeatEnd) this.streaks.delete(key); else this.streaks.set(key, total);
         if (this.streaks.size > 5000) this.streaks.clear();
       }
       if (count <= 0) return;
-      B({ type: 'gift', ...u, giftName, giftId: d.giftId, coins, count });
+      B({ type: 'gift', ...u, giftName, giftId: gid, coins, count });
     });
-    conn.on(WebcastEvent.LIKE, (d) => B({ type: 'like', ...who(d), count: Number(d.likeCount || 1) }));
-    conn.on(WebcastEvent.FOLLOW, (d) => B({ type: 'follow', ...who(d) }));
-    conn.on(WebcastEvent.SHARE, (d) => B({ type: 'share', ...who(d) }));
-    conn.on(WebcastEvent.ROOM_USER, (d) => B({ type: 'viewers', count: Number(d.total ?? d.viewerCount ?? 0) }));
+    // v3: d.count = likes in this event (d.total = room total); 1.x: d.likeCount
+    conn.on(WebcastEvent.LIKE, (d) => { sample(this.user, 'like', d); B({ type: 'like', ...who(d), count: Math.max(1, Math.min(500, num(d.count, d.likeCount, 1))) }); });
+    conn.on(WebcastEvent.FOLLOW, (d) => { sample(this.user, 'follow', d); B({ type: 'follow', ...who(d) }); });
+    conn.on(WebcastEvent.SHARE, (d) => { sample(this.user, 'share', d); B({ type: 'share', ...who(d) }); });
+    conn.on(WebcastEvent.ROOM_USER, (d) => { sample(this.user, 'viewers', d); B({ type: 'viewers', count: num(d.total, d.totalUser, d.viewerCount, 0) }); });
     conn.on(WebcastEvent.STREAM_END, () => {
       if (this.conn !== conn) return;
       console.log(`[${this.user}] LIVE ended, waiting for the next LIVE`);

@@ -240,6 +240,8 @@ const SMAP = {
 // All sounds are made with WebAudio (no sound files). In recording mode (?manual) the sound
 // events are logged with their game time and rendered offline into a WAV for the demo video.
 const AU = { ctx: null, out: null, on: true, last: {}, log: [], bufs: new WeakMap() };
+// sound keeper state (see 'SOUND KEEPER' below): armed = sound has worked once / start was tapped
+const SK = { armed: false, since: 0, tries: 0, mixed: false, badge: null };
 const SND_GAP = { step: 0.07, punch: 0.035, punchB: 0.035, kickhit: 0.035, slash: 0.04, shot: 0.03, wsh1: 0.03, wsh2: 0.04, wsh3: 0.05, murmur: 1.5, crowd: 0.9, heal: 0.08, kiai: 0.35, grunt: 0.25, clang: 0.04, lock: 0.1 };
 function noiseBuf(ac) {
   let b = AU.bufs.get(ac);
@@ -258,7 +260,7 @@ function makeOut(ac) {
 function audioInit() {
   if (MANUAL) return;
   try {
-    if (!AU.ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; AU.ctx = new AC(); AU.out = makeOut(AU.ctx); }
+    if (!AU.ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; AU.ctx = new AC(); AU.out = makeOut(AU.ctx); watchCtx(AU.ctx); }
     iosAudioSession();
     if (AU.ctx.state !== 'running') { const r = AU.ctx.resume(); if (r && r.catch) r.catch(() => {}); }
     if (!AU.unlocked) {   // play 1 silent sample inside the tap - some phones only unlock audio this way
@@ -272,7 +274,9 @@ function audioInit() {
 // navigator.audioSession; older iOS needs a (silent, looping) <audio> element started inside the tap.
 function iosAudioSession() {
   if (!IS_IOS) return;
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  // 'playback' plays with the silent switch on; 'ambient' (fallback when another app such as a TikTok LIVE
+  // screen share keeps taking the sound away) mixes with the other app instead of being cut off by it
+  try { if (navigator.audioSession) { const t = SK.mixed ? 'ambient' : 'playback'; if (navigator.audioSession.type !== t) navigator.audioSession.type = t; } } catch (e) {}
   try {
     if (!AU.el) { AU.el = document.createElement('audio'); AU.el.src = 'sounds/silence.m4a'; AU.el.loop = true; AU.el.setAttribute('playsinline', ''); AU.el.volume = 0.01; }
     if (AU.el.paused) { const r = AU.el.play(); if (r && r.catch) r.catch(() => {}); }
@@ -3292,7 +3296,7 @@ function setupStart() {
   const hide = () => { tap.classList.add('hidden'); };
   const start = (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
-    startSound(); goFullscreen(); hide(); started = true;
+    SK.armed = true; startSound(); goFullscreen(); hide(); started = true; setTimeout(sndUpdate, 1200);
   };
   tap.addEventListener('click', start);
   // phone with no TikTok name (no link name, nothing saved): ask once, then it is remembered
@@ -3327,9 +3331,68 @@ function setupStart() {
   window.addEventListener('click', (e) => {
     if (!hint.classList.contains('hidden') && !e.target.closest('#sim')) { goFullscreen(); if (!audioRunning()) startSound(); }
   });
-  // coming back to the tab: wake the sound up again
-  const wake = () => { if (!document.hidden && AU.ctx && AU.ctx.state !== 'running') { try { const r = AU.ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch (e) {} } };
-  document.addEventListener('visibilitychange', wake); window.addEventListener('pageshow', wake);
+  // coming back / being interrupted: handled by the sound keeper (setupSoundKeeper)
+}
+
+// ============================================================ SOUND KEEPER
+// iPhone: starting a TikTok LIVE screen share (and its PiP window), a call, Siri or leaving the app takes the
+// sound away from the web page: the AudioContext goes 'interrupted'/'suspended' and the silent keep-alive
+// <audio> pauses. Here we keep trying to get it back (state change, coming back, focus, every touch, every 1 s)
+// and, if iOS insists on a tap, show a small 'TAP FOR SOUND' badge in the corner until it works again.
+function sndWanted() { return !MANUAL && AU.on && SK.armed; }
+function kickSound(gesture) {
+  if (MANUAL || !AU.on) return;
+  if (gesture) SK.armed = true;
+  if (!AU.ctx) { if (gesture) audioInit(); return; }
+  if (IS_IOS) iosAudioSession();           // re-start the silent keep-alive <audio> (paused by the interruption)
+  let ac = AU.ctx;
+  if (ac.state === 'running') return;
+  // still dead > 1.5 s and this is a real tap: build a fresh AudioContext inside the tap (WebKit sometimes leaves
+  // the old one stuck on 'interrupted' for good). Sample buffers are context-free, wind restarts by itself.
+  if (gesture && SK.since && performance.now() - SK.since > 1500 && ac.state !== 'closed') {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext, nc = new AC();
+      try { const c = ac.close(); if (c && c.catch) c.catch(() => {}); } catch (e) {}
+      AU.ctx = ac = nc; AU.out = makeOut(nc); AU.unlocked = false; watchCtx(nc);
+      const b = nc.createBuffer(1, 1, 22050), s = nc.createBufferSource(); s.buffer = b; s.connect(nc.destination); s.start(0);
+      if (SB.ok) startWind(nc, AU.out, nc.currentTime, null);
+    } catch (e) {}
+  }
+  try {
+    SK.tries++;
+    // every 2nd try: suspend() then resume() - known way to un-stick an 'interrupted' context on iOS
+    const r = (ac.state === 'interrupted' && SK.tries % 2 === 0 && ac.suspend)
+      ? Promise.resolve(ac.suspend()).catch(() => {}).then(() => ac.resume())
+      : ac.resume();
+    if (r && r.then) r.then(() => sndUpdate(), () => {});
+  } catch (e) {}
+  // keeps failing while we are on screen (another app holds the sound): switch iOS to the mixing session
+  if (!SK.mixed && SK.tries >= 6 && navigator.audioSession) { SK.mixed = true; iosAudioSession(); }
+}
+function watchCtx(ac) {
+  if (!ac || ac._sk) return; ac._sk = true;
+  try { ac.addEventListener('statechange', () => { sndUpdate(); if (ac.state !== 'running' && ac.state !== 'closed') setTimeout(() => kickSound(false), 150); }); } catch (e) {}
+}
+function sndUpdate() {
+  const ok = audioRunning();
+  if (ok) { SK.armed = true; SK.since = 0; SK.tries = 0; } else if (!SK.since) SK.since = performance.now();
+  const b = SK.badge; if (!b) return;
+  const tapOpen = (() => { const t = document.getElementById('tap'); return t && !t.classList.contains('hidden'); })();
+  const show = sndWanted() && !ok && !document.hidden && !tapOpen && SK.since && performance.now() - SK.since > 700;
+  b.classList.toggle('hidden', !show);
+}
+function setupSoundKeeper() {
+  if (MANUAL) return;
+  const b = document.getElementById('sndBadge'); SK.badge = b;
+  if (b) b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); kickSound(true); setTimeout(sndUpdate, 300); });
+  if (AU.ctx) watchCtx(AU.ctx);
+  const wake = () => { if (!document.hidden) { kickSound(false); setTimeout(sndUpdate, 400); } else sndUpdate(); };
+  document.addEventListener('visibilitychange', wake); window.addEventListener('pageshow', wake); window.addEventListener('focus', wake);
+  try { if (navigator.audioSession && navigator.audioSession.addEventListener) navigator.audioSession.addEventListener('statechange', wake); } catch (e) {}
+  // any touch / click / key counts as the tap iOS wants (capture phase: runs before everything else, never blocks it)
+  const g = () => { if (sndWanted() && !audioRunning()) { kickSound(true); setTimeout(sndUpdate, 300); } else if (IS_IOS && AU.el && AU.el.paused && AU.on) iosAudioSession(); };
+  for (const ev of ['touchend', 'pointerup', 'click', 'keydown']) window.addEventListener(ev, g, { capture: true, passive: true });
+  setInterval(() => { try { if (sndWanted() && !document.hidden && AU.ctx && !audioRunning()) kickSound(false); sndUpdate(); } catch (e) {} }, 1000);
 }
 
 // service worker: only so Android can install the game as an app. Network only, never a stale copy.
@@ -3389,6 +3452,7 @@ async function boot() {
   safe('sound', loadSamples);
   safe('sound', audioInit);   // works right away if the browser allows autoplay, otherwise after the first tap/key
   safe('start', setupStart);
+  safe('soundkeeper', setupSoundKeeper);
   safe('sw', registerSW);
   safe('round', startRound);
   window.SF = {
