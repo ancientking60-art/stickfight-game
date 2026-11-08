@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>STICK WAR LIVE</title>
+<title>STICK FIGHT</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05060d">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Stick War">
+<meta name="apple-mobile-web-app-title" content="Stick Fight">
 <base href="/">
 <link id="mf" rel="manifest" href="/manifest.webmanifest">
 <script>
@@ -65,7 +65,7 @@
   #tap.hidden, #fsHint.hidden, #nameBox.hidden, #sndBadge.hidden { display: none; }
   #errLine { position: fixed; left: 4px; bottom: calc(2px + env(safe-area-inset-bottom)); z-index: 30; max-width: 96vw; overflow: hidden; white-space: nowrap;
              text-overflow: ellipsis; font: 10px/1.3 monospace; color: #ff8080; background: rgba(0,0,0,.6); padding: 1px 4px; pointer-events: none; }
-  #sim { position: fixed; top: 8px; right: 8px; width: 230px; max-height: calc(100vh - 16px); overflow-y: auto;
+  #sim { position: fixed; top: 8px; right: 8px; width: 280px; max-height: calc(100vh - 16px); overflow-y: auto;
          background: rgba(10,14,30,.92); border: 1px solid #2a6cff; border-radius: 10px; padding: 8px; color: #dfe8ff; font-size: 12px; z-index: 5;
          box-shadow: 0 0 18px rgba(40,120,255,.35); }
   #sim.hidden { display: none; }
@@ -84,37 +84,33 @@
 <body>
 <div id="wrap"><canvas id="c" width="1080" height="1920"></canvas></div>
 <div id="sim">
-  <h3>TEST BUTTONS (press H to hide)</h3>
+  <h3>TEST (press H to hide)</h3>
+  <div class="row"><button id="likeBtn">New like — 50 HP (L)</button></div>
+  <div class="row"><button id="likeAgainBtn">Same person likes (K)</button></div>
   <div class="row">
-    <button class="b1" data-join="0">+ White fan (1)</button>
-    <button class="b0" data-join="1">+ Black fan (2)</button>
+    <button id="followBtn">New follow — 100 HP (F)</button>
+    <button id="followLastBtn">Follow last (G)</button>
   </div>
-  <div>Gifts / likes come from:</div>
-  <select id="simTeam">
-    <option value="r">a random fan</option>
-    <option value="0">a White fan</option>
-    <option value="1">a Black fan</option>
+  <div>Gift comes from:</div>
+  <select id="simWho">
+    <option value="last">last viewer</option>
+    <option value="new">a new viewer</option>
+    <option value="rand">someone already in</option>
   </select>
   <div class="row" id="giftBtns"></div>
   <div class="row">
-    <button id="likeBtn">10 Likes (L)</button>
-    <button id="followBtn">Follow (F)</button>
-    <button id="shareBtn">Share (S)</button>
-  </div>
-  <div class="row">
     <button id="autoBtn">Auto demo (A)</button>
-  </div>
-  <div class="row">
-    <button id="soundBtn">Sound (M)</button>
     <button id="newRoundBtn">New round (N)</button>
   </div>
-  <small>Keys: 1 new White fan, 2 new Black fan, Q W E R T Y U = gifts, L likes, F follow, S share, A auto demo, N new round, H hide this box.<br>
+  <div class="row"><button id="soundBtn">Sound (M)</button></div>
+  <small>Like joins once at 50 HP. Follow is 100 HP. A gift adds double its coins (1→2, 100→200) as HP and makes hits harder.<br>
+  Keys: L new like, K same person likes again, F new follow, G follow last, Q rose, E 10 coins, R 100 coins, T 500 coins, A auto, N new round, H hide.<br>
   <span id="liveInfo">-</span></small>
 </div>
 <div id="tap" class="hidden">
-  <div class="men"><b>WHITE</b> VS <i>BLACK</i></div>
+  <div class="men">FREE FOR ALL</div>
   <div class="t1">TAP TO START</div>
-  <div class="t2">turns on sound + full screen</div>
+  <div class="t2">like drops you in · gifts make you stronger</div>
   <form id="nameBox" class="hidden" autocomplete="off">
     <label for="nameIn">Your TikTok name</label>
     <div><input id="nameIn" type="text" placeholder="@yourname" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"><button type="submit">GO</button></div>

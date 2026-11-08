@@ -64,7 +64,7 @@ const server = http.createServer((req, res) => {
     const qs = q.toString() ? '?' + q.toString() : '';
     res.writeHead(200, { 'Content-Type': MIME['.webmanifest'], 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({
-      id: '/' + qs, name: qu ? `Stick War LIVE - @${qu}` : 'Stick War LIVE', short_name: 'Stick War',
+      id: '/' + qs, name: qu ? `Stick Fight - @${qu}` : 'Stick Fight', short_name: 'Stick Fight',
       start_url: qu && q.has('clean') ? '/u/' + encodeURIComponent(qu) : '/' + qs, scope: '/', display: 'fullscreen', display_override: ['fullscreen', 'standalone'], orientation: 'portrait',
       background_color: '#05060d', theme_color: '#05060d',
       icons: [
@@ -361,8 +361,9 @@ server.on('error', (e) => {
 server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   const url = `http://localhost:${PORT}`;
   console.log('==============================================');
-  console.log('  STICK WAR LIVE is running!');
+  console.log('  STICK FIGHT is running!  (free-for-all)');
   console.log(`  Game:  ${url}`);
+  console.log('  Like = join 50 HP, Follow = 100 HP, Gift = 2x coins.');
   console.log('  Press H in the game to show/hide test buttons');
   console.log('  Keep this black window open while you stream.');
   console.log('==============================================');
