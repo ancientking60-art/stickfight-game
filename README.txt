@@ -20,6 +20,20 @@ HOW VIEWERS JOIN
 The same people come back every round, keeping the HP and power
 they earned from follows and gifts.
 
+HOW MANY CAN FIGHT AT ONCE
+  14. That is the hard cap (config.json game.maxFighters, from 8 to 30).
+  Past 14, the extra people wait. The screen shows "waiting: N".
+  When someone is knocked out, the next waiter drops in. Each new
+  round also rotates who starts, so the same 14 are not always first.
+  14 is the phone limit: more than that and the names pile up, the
+  stickmen shrink, and the glow on every fighter gets heavy.
+
+PROFILE PICTURES
+  Each fighter's head is that viewer's TikTok photo, in a circle.
+  If there is no photo, or it fails to load, the plain stickman
+  face is used instead. Test mode draws a coloured placeholder
+  with their initials so you can see it without going live.
+
 ON SCREEN
   A small legend stays at the top:
     LIKE = JOIN 50 HP  ·  FOLLOW = 100 HP  ·  GIFT = 2× POWER

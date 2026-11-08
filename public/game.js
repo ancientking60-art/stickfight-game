@@ -116,7 +116,7 @@ const EASE = {
 function wpick(list) { let s = 0; for (const c of list) s += c.w; let r = Math.random() * s; for (const c of list) { r -= c.w; if (r <= 0) return c; } return list[list.length - 1]; }
 
 const DEFAULT_SETTINGS = {
-  game: { roundSeconds: 90, likeHp: 50, followHp: 100, giftMultiplier: 2, heroHp: 50, fighterSize: 0.66, damage: 1, suddenDeathDamage: 2, slowMotion: true, sound: true, volume: 0.8, title: 'STICK FIGHT' },
+  game: { roundSeconds: 90, likeHp: 50, followHp: 100, giftMultiplier: 2, maxFighters: 14, heroHp: 50, fighterSize: 0.66, damage: 1, suddenDeathDamage: 2, slowMotion: true, sound: true, volume: 0.8, title: 'STICK FIGHT' },
   gifts: {
     joinWords: { white: ['white', '1', 'team white'], black: ['black', '2', 'team black'] },
     likes: { every: 10, heal: 2 }, follow: { heal: 5 }, share: { heal: 5 }, maxShieldPercent: 150,
@@ -2011,7 +2011,13 @@ const roster = new Map();
 const supporters = roster;   // older debug hooks read this map
 let waitQ = [];
 let pitRotate = 0;
-const MAX_LIVE = 14;
+// Hard cap on stickmen drawn at once. 14 keeps names readable on a phone and
+// keeps the per-fighter glow from stacking up. config.json game.maxFighters can
+// move it between 8 and 30. Anyone past the cap waits for an open spot.
+function pitMax() {
+  const n = Math.round(Number(G_().maxFighters));
+  return clamp(Number.isFinite(n) && n > 0 ? n : 14, 8, 30);
+}
 const round = { n: 0, state: 'lobby', t: 0, time: 0, winner: -1, winnerF: null, mvp: null, sudden: false, sdT: 0, beeps: 0, mur: -1, bowed: false, startedWith: 0, bantered: false };
 const heroes = [null, null];
 const G_ = () => S.game;
@@ -2041,7 +2047,7 @@ function makePlayer(ev, baseHp) {
     nick: String(ev.nick || ev.id || 'viewer').replace(/\s+/g, ' ').trim().slice(0, 18) || 'viewer',
     color: pickColor(),
     baseHp, bonusHp: 0, coins: 0, wins: 0,
-    fighter: null, queued: false
+    fighter: null, queued: false, avatarUrl: '', avatarRec: null
   };
 }
 function arenaScale(n) {
@@ -2077,6 +2083,7 @@ function spawnBody(p, x, announce, invuln) {
     face: x < W / 2 ? 1 : -1, scale: arenaScale(aliveCount() + 1),
     name: p.nick, giftDmg: giftDmgOf(p), user: p, viewerId: p.id
   });
+  f.avatarRec = p.avatarRec || null;
   f.announce = announce || '';
   p.fighter = f; p.queued = false;
   fighters.push(f);
@@ -2092,7 +2099,7 @@ function enqueue(p, front) {
 function dropOrQueue(p, announce, front) {
   if (round.state === 'end') { enqueue(p, front); return null; }
   if (p.fighter && p.fighter.alive) return p.fighter;
-  if (aliveCount() >= MAX_LIVE) {
+  if (aliveCount() >= pitMax()) {
     enqueue(p, front);
     addFeed([[p.nick, TEAMS[p.color].ui], [' is in — drops when a spot opens', '#ffd84a']]);
     return null;
@@ -2101,7 +2108,7 @@ function dropOrQueue(p, announce, front) {
 }
 function tryDropQueued() {
   if (round.state === 'end') return;
-  while (aliveCount() < MAX_LIVE && waitQ.length) {
+  while (aliveCount() < pitMax() && waitQ.length) {
     const p = waitQ.shift();
     p.queued = false;
     if (p.fighter && p.fighter.alive) continue;
@@ -2115,7 +2122,7 @@ function spawnRoster() {
   const list = [...roster.values()];
   for (const p of list) { p.queued = false; p.fighter = null; }
   if (!list.length) return;
-  const n = Math.min(MAX_LIVE, list.length);
+  const n = Math.min(pitMax(), list.length);
   const start = pitRotate % list.length;
   pitRotate += n;
   for (let i = 0; i < list.length; i++) {
@@ -2221,6 +2228,7 @@ function rememberNick(p, ev) {
     p.nick = String(ev.nick).replace(/\s+/g, ' ').trim().slice(0, 18) || p.nick;
     if (p.fighter) p.fighter.name = p.nick;
   }
+  applyAvatar(p, ev);
 }
 function onLike(ev) {
   const id = pid(ev);
@@ -2233,6 +2241,7 @@ function onLike(ev) {
   }
   p = makePlayer(ev, LIKE_HP());
   roster.set(id, p);
+  applyAvatar(p, ev);
   addFeed([[p.nick, TEAMS[p.color].ui], [' liked — ' + p.baseHp + ' HP', '#ff9cc4']]);
   dropOrQueue(p, p.baseHp + ' HP');
   maybeStart();
@@ -2263,6 +2272,7 @@ function onFollow(ev) {
   if (!p) {
     p = makePlayer(ev, FOLLOW_HP());
     roster.set(id, p);
+    applyAvatar(p, ev);
     addFeed([[p.nick, '#7fb2ff'], [' followed — ' + p.baseHp + ' HP', '#7fb2ff']]);
     dropOrQueue(p, p.baseHp + ' HP');
     maybeStart();
@@ -2282,6 +2292,7 @@ function onGift(ev) {
   if (!p) {
     p = makePlayer(ev, LIKE_HP());
     roster.set(id, p);
+    applyAvatar(p, ev);
   } else rememberNick(p, ev);
   p.bonusHp += reward;
   p.coins += coins * count;
@@ -2551,7 +2562,73 @@ function drawBody(J, team, s, flash, alpha = 1) {
   ctx.fillStyle = front; torsoPath(J, s, 0); legPath(J, 'kF', 'fF', s, 0); armPath(J, 'eF', 'hF', s, 0);
   ctx.globalAlpha = 1;
 }
-// small angry eyes on the head, facing the way the fighter faces (squint when hurt)
+// profile photo, clipped to a circle on the head. Missing or broken pictures keep the plain face.
+const avatarCache = new Map();
+function loadAvatar(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  const src = /^data:image\//i.test(raw) ? raw : '/avatar?u=' + encodeURIComponent(raw);
+  if (avatarCache.has(src)) return avatarCache.get(src);
+  const img = new Image();
+  const rec = { img, fail: false };
+  img.onload = () => { rec.fail = !img.naturalWidth; };
+  img.onerror = () => { rec.fail = true; };
+  img.src = src;
+  avatarCache.set(src, rec);
+  return rec;
+}
+function placeholderAvatar(nick) {
+  const key = String(nick || '?');
+  const id = 'ph:' + key;
+  if (avatarCache.has(id)) return avatarCache.get(id).url;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const hue = [...key].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 360;
+  g.fillStyle = 'hsl(' + hue + ' 68% 48%)';
+  g.beginPath(); g.arc(64, 64, 64, 0, TAU); g.fill();
+  g.fillStyle = '#16120e';
+  g.font = '700 58px Arial, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const letters = key.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?';
+  g.fillText(letters, 64, 70);
+  const url = c.toDataURL('image/png');
+  avatarCache.set(id, { url });
+  return url;
+}
+function faceFor(u) {
+  const nick = u && (u.nick || u.id) || '?';
+  return { ...u, avatar: (u && u.avatar) || placeholderAvatar(nick) };
+}
+function applyAvatar(p, ev) {
+  const url = String(ev && ev.avatar || '').trim();
+  if (!url || !p) return;
+  if (p.avatarUrl !== url) { p.avatarUrl = url; p.avatarRec = loadAvatar(url); }
+  if (p.fighter) p.fighter.avatarRec = p.avatarRec;
+}
+function avatarReady(f) {
+  const rec = f && f.avatarRec, img = rec && rec.img;
+  return !!(img && !rec.fail && img.complete && img.naturalWidth);
+}
+function drawAvatarBadges() {
+  const live = fighters.filter((f) => f.alive && f.J && f.J.head && avatarReady(f));
+  if (!live.length) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const R = live.length > 10 ? 22 : live.length > 6 ? 30 : 42;
+  for (const f of live) {
+    const img = f.avatarRec.img, p = w2s(f.J.head.x, f.J.head.y);
+    const iw = img.naturalWidth, ih = img.naturalHeight, side = Math.min(iw, ih);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.clip();
+    ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, p.x - R, p.y - R, R * 2, R * 2);
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU);
+    ctx.lineWidth = Math.max(3, R * 0.12);
+    ctx.strokeStyle = (TEAMS[f.team] && TEAMS[f.team].ui) || '#fff';
+    ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+  }
+}
+// small angry eyes on the head, or the viewer's profile picture when we have one
 function drawFace(f) {
   const J = f.J, s = f.s, t = TEAMS[f.team], hr = J.hr * HEAD_K;
   if (!J || !J.head || !J.neck) return;
@@ -3225,7 +3302,9 @@ function drawWorldUI() {
   for (const f of fighters) {
     if (!f.alive || !f.J) continue;
     const top = Math.min(f.J.head.y, f.J.hF.y, f.J.hB.y, f.J.fF.y, f.J.fB.y) - f.J.hr - 8;
-    const p = w2s(f.x, top); p.y = clamp(p.y, VIEW_TOP + 80, VIEW_BOT - 20); tags.push([f, p]);
+    const p = w2s(f.x, top);
+    if (avatarReady(f)) p.y -= fighters.filter((q) => q.alive).length > 8 ? 16 : 34;
+    p.y = clamp(p.y, VIEW_TOP + 28, VIEW_BOT - 20); tags.push([f, p]);
   }
   tags.sort((a, b) => a[1].x - b[1].x || a[1].y - b[1].y);
   for (let pass = 0; pass < 4; pass++) {
@@ -3407,7 +3486,7 @@ function drawHUD() {
   ctx.shadowBlur = 0;
   const alive = aliveCount(), queued = waitQ.length;
   const phase = round.state === 'lobby' ? 'WAITING' : round.state === 'countdown' ? 'GET READY' : round.state === 'end' ? 'WINNER' : round.sudden ? 'SUDDEN DEATH' : 'FIGHTING';
-  const info = (round.n > 0 ? 'ROUND ' + round.n + '   ·   ' : '') + phase + '   ·   ' + alive + ' IN' + (queued ? '   ·   ' + queued + ' WAITING' : '');
+  const info = (round.n > 0 ? 'ROUND ' + round.n + '   ·   ' : '') + phase + '   ·   ' + alive + ' IN' + (queued ? '   ·   waiting: ' + queued : '');
   outlined(info, W / 2, 112, '28px Russo, Arial, sans-serif', phase === 'SUDDEN DEATH' ? '#ff6060' : '#d5def8', '#000', 5);
   const likeHp = LIKE_HP(), followHp = FOLLOW_HP(), mul = GIFT_X();
   const legend = 'LIKE = JOIN ' + likeHp + ' HP    ·    FOLLOW = ' + followHp + ' HP    ·    GIFT = ' + mul + '× POWER';
@@ -3725,6 +3804,7 @@ function render() {
   drawRain();
   // screen space from here on
   drawOverlays();
+  drawAvatarBadges();
   drawWorldUI();
   drawBubbles(); drawToasts();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3799,15 +3879,15 @@ function simTarget() {
   if (all.length) { const p = all[all.length - 1]; return { id: p.id, nick: p.nick }; }
   const u = newFake(); sim.last = u; return u;
 }
-function simLikeNew() { const u = newFake(); sim.last = u; onEvent({ type: 'like', ...u, count: 1 }); return u; }
-function simLikeAgain() { const u = sim.last || simTarget(); onEvent({ type: 'like', id: u.id, nick: u.nick, count: 1 }); return u; }
-function simFollowNew() { const u = newFake(); sim.last = u; onEvent({ type: 'follow', ...u }); return u; }
-function simFollowLast() { const u = sim.last || simTarget(); onEvent({ type: 'follow', id: u.id, nick: u.nick }); return u; }
+function simLikeNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'like', ...u, count: 1 }); return u; }
+function simLikeAgain() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'like', id: u.id, nick: u.nick, avatar: u.avatar, count: 1 }); return u; }
+function simFollowNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'follow', ...u }); return u; }
+function simFollowLast() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'follow', id: u.id, nick: u.nick, avatar: u.avatar }); return u; }
 function simJoin() { return simLikeNew(); }
 function simLikes() { return simLikeNew(); }
 function fakeFan() { return simTarget(); }
 function simGift(name, coins, count = 1) {
-  const u = simTarget();
+  const u = faceFor(simTarget());
   onEvent({ type: 'gift', ...u, giftName: name, coins, count });
   sim.last = u;
   return u;
@@ -4073,7 +4153,7 @@ async function boot() {
   safe('round', startRound);
   window.SF = {
     step: (n = 1, fps = 30) => { for (let i = 0; i < n; i++) tick(1 / fps); render(); },
-    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simFollowNew, showTalk, talk,
+    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simFollowNew, showTalk, talk, pitMax, placeholderAvatar,
     state: () => ({
       round: round.state, n: round.n, winner: round.winnerF && round.winnerF.name,
       talk: talk.text, kind: talk.kind,

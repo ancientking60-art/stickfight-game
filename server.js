@@ -39,6 +39,40 @@ const cleanUser = (u) => String(u || '').trim().replace(/^@/, '').replace(/[^A-Z
 const MAX_SESSIONS = Number(process.env.MAX_SESSIONS || 25);
 let liveState = { mode: SIM_ONLY ? 'simulator' : 'connecting', username, message: '' };
 
+// TikTok profile pictures are on another site, so the browser cannot paint them
+// onto the canvas. This only fetches https images from TikTok's own CDNs.
+const AVATAR_HOST = /(^|\.)(tiktokcdn\.com|tiktokcdn-us\.com|tiktokv\.com|muscdn\.com|byteoversea\.com|ibyteimg\.com|tiktok\.com)$/i;
+const avatarCache = new Map();
+function avatarOk(raw) {
+  let u;
+  try { u = new URL(String(raw || '')); } catch { return null; }
+  if (u.protocol !== 'https:' || !AVATAR_HOST.test(u.hostname)) return null;
+  return u.toString();
+}
+async function proxyAvatar(raw, res) {
+  const key = avatarOk(raw);
+  if (!key) { res.writeHead(400, { 'Content-Type': 'text/plain' }); res.end('bad avatar'); return; }
+  const hit = avatarCache.get(key);
+  if (hit && Date.now() - hit.at < 15 * 60 * 1000) {
+    res.writeHead(200, { 'Content-Type': hit.type, 'Cache-Control': 'public, max-age=600', 'Access-Control-Allow-Origin': '*' });
+    res.end(hit.buf); return;
+  }
+  try {
+    const r = await fetch(key, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'image/*' } });
+    if (!r.ok || !avatarOk(r.url)) { res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('no picture'); return; }
+    const type = String(r.headers.get('content-type') || 'image/jpeg').split(';')[0].trim().toLowerCase();
+    if (!/^image\/(jpeg|jpg|png|webp|gif)$/.test(type)) { res.writeHead(415, { 'Content-Type': 'text/plain' }); res.end('not an image'); return; }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length || buf.length > 1500000) { res.writeHead(413, { 'Content-Type': 'text/plain' }); res.end('too big'); return; }
+    if (avatarCache.size > 240) avatarCache.delete(avatarCache.keys().next().value);
+    avatarCache.set(key, { buf, type, at: Date.now() });
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=600', 'Access-Control-Allow-Origin': '*' });
+    res.end(buf);
+  } catch {
+    res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('no picture');
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/settings.json') {
@@ -52,6 +86,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ game: cfg.game || {}, gifts, live }));
     return;
   }
+  if (url.pathname === '/avatar') { proxyAvatar(url.searchParams.get('u') || '', res); return; }
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ ok: true, sessions: [...sessions.values()].map((x) => ({ user: x.user, mode: x.mode, clients: x.clients.size })) }));
@@ -144,12 +179,38 @@ const server = http.createServer((req, res) => {
 // ---------------------------------------------------------------- TikTok sessions (one per username)
 // tiktok-live-connector 2.x (tiktok-live-proto v3) shape: d.user = { id, displayId (= @name), nickname, secUid };
 // older 1.x shape: d.uniqueId / d.userId / d.nickname at the top level. Accept both.
+function firstUrl(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  const list = v.urlList || v.url_list || v.mUrls || v.m_urls || v.urls;
+  if (Array.isArray(list)) {
+    const s = list.find((x) => typeof x === 'string' && /^https:\/\//i.test(x));
+    if (s) return s;
+  }
+  if (typeof v.url === 'string') return v.url;
+  return '';
+}
+function avatarOf(data) {
+  const d = data || {}, u = d.user || {}, details = u.userDetails || d.userDetails || {};
+  const picks = [
+    d.profilePictureUrl, u.profilePictureUrl, details.profilePictureUrls, details.profilePictureUrl,
+    u.avatarMedium, u.avatarThumb, u.avatarLarge, u.avatarJpg,
+    d.avatarMedium, d.avatarThumb, d.avatarLarge,
+    u.profilePicture, d.profilePicture
+  ];
+  for (const p of picks) {
+    const s = firstUrl(p);
+    if (s && /^https:\/\//i.test(s)) return s.slice(0, 900);
+  }
+  return '';
+}
 function who(data) {
   const d = data || {}, u = d.user || {};
   const name = u.uniqueId || u.displayId || u.username || d.uniqueId || '';
   const id = String(name || u.userId || u.id || u.idStr || d.userId || u.secUid || u.nickname || d.nickname || 'viewer');
   const nick = String(u.nickname || d.nickname || name || 'viewer').slice(0, 18);
-  return { id, nick };
+  const avatar = avatarOf(data);
+  return avatar ? { id, nick, avatar } : { id, nick };
 }
 const num = (...v) => { for (const x of v) { const n = Number(x); if (x !== undefined && x !== null && x !== '' && Number.isFinite(n)) return n; } return 0; };
 // one raw sample of each event type in the log (truncated) - for debugging field names
