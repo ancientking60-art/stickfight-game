@@ -54,9 +54,19 @@ RUN IT
 
   Your live:  http://localhost:3000/?user=YOUR_TIKTOK_NAME&clean=1
   Short link: /u/YOUR_TIKTOK_NAME
-  The page connects to that TikTok LIVE (it keeps retrying until
-  you are live). clean=1 hides the test box. The name is remembered
-  on that phone; /?user=reset forgets it.
+  The page connects to that TikTok LIVE and keeps retrying until
+  you are live. A small line at the top stays on screen:
+  connecting / connected to @name / the error. clean=1 hides the
+  test box only. The name is remembered on that phone;
+  /?user=reset forgets it.
+
+  If the line says "TikTok blocked lookup — set SIGN_API_KEY":
+  make a free key at https://www.eulerstream.com and add it on
+  Render as the environment variable SIGN_API_KEY, then redeploy.
+  Do not put the key in config.json.
+
+  Rain and thunder sounds are off. The storm is still drawn.
+  Fight sounds and voices stay.
 
   Put your username in config.json "tiktokUsername" if you want a
   default. Leave it blank for test mode.

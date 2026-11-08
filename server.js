@@ -251,6 +251,66 @@ async function loadLib() {
 const sessions = new Map(); // lowercase username -> Session
 const rnd = (a, b) => a + Math.random() * (b - a);
 
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://www.tiktok.com/'
+};
+const SIGN_KEY = String(process.env.SIGN_API_KEY || config.signApiKey || '').trim();
+// TikTok's own page still has the room id. The connector's lookup is often blocked
+// from a datacenter, which is the "Failed to retrieve Room ID" error on Render.
+async function lookupRoom(uniqueId) {
+  const errors = [];
+  const roomFromHtml = (html) => {
+    const m = html.match(/<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/);
+    if (!m) return null;
+    const live = JSON.parse(m[1])?.LiveRoom?.liveRoomUserInfo;
+    const roomId = live?.user?.roomId;
+    if (!roomId) return null;
+    const status = live?.liveRoom?.status ?? live?.user?.status;
+    return { roomId: String(roomId), status: status == null ? null : Number(status), source: 'html' };
+  };
+  try {
+    const res = await fetch(`https://www.tiktok.com/@${encodeURIComponent(uniqueId)}/live`, { headers: BROWSER_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(12000) });
+    const html = await res.text();
+    const found = roomFromHtml(html);
+    if (found) return found;
+    errors.push(html.includes('captcha') ? 'html: captcha' : 'html: no room id');
+  } catch (e) { errors.push('html: ' + (e?.message || e)); }
+  try {
+    const res = await fetch(`https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&uniqueId=${encodeURIComponent(uniqueId)}`, {
+      headers: { ...BROWSER_HEADERS, Accept: 'application/json' }, redirect: 'follow', signal: AbortSignal.timeout(12000)
+    });
+    const j = await res.json();
+    const roomId = j?.data?.user?.roomId;
+    if (roomId) {
+      const status = j?.data?.liveRoom?.status ?? j?.data?.user?.status;
+      return { roomId: String(roomId), status: status == null ? null : Number(status), source: 'api' };
+    }
+    errors.push('api: ' + (j?.message || j?.status_msg || 'no room'));
+  } catch (e) { errors.push('api: ' + (e?.message || e)); }
+  return { error: errors.join(' | ') };
+}
+function explainConnectError(e) {
+  const bits = [];
+  const walk = (err, depth) => {
+    if (!err || depth > 4) return;
+    const msg = err?.message || (typeof err === 'string' ? err : '');
+    if (msg) bits.push((err?.constructor?.name ? err.constructor.name + ': ' : '') + msg);
+    const nested = err.requestErrs || err.errors;
+    if (Array.isArray(nested)) nested.forEach((n) => walk(n, depth + 1));
+  };
+  walk(e, 0);
+  const all = bits.join(' || ') || String(e);
+  const offline = /UserOffline|isn't online|not live|offline/i.test(all);
+  let text = offline ? 'not live yet' : all.replace(/\s+/g, ' ').slice(0, 90);
+  if (!offline && /lack of permission|Euler|401|403|rate limit|Room ID/i.test(all)) {
+    text = SIGN_KEY ? 'TikTok blocked the lookup' : 'TikTok blocked lookup — set SIGN_API_KEY';
+  }
+  return { offline, text, detail: all.slice(0, 900) };
+}
+
 class Session {
   constructor(user) {
     this.user = user; this.clients = new Set(); this.mode = 'connecting'; this.message = '';
@@ -286,11 +346,12 @@ class Session {
     const { TikTokLiveConnection, WebcastEvent, ControlEvent } = L;
     try { this.conn?.removeAllListeners?.(); this.conn?.disconnect?.(); } catch {}
     const options = { processInitialData: false };
-    if (config.signApiKey) options.signApiKey = config.signApiKey;
+    if (SIGN_KEY) options.signApiKey = SIGN_KEY;
     const conn = this.conn = new TikTokLiveConnection(this.user, options);
     const B = (m) => { if (this.conn === conn) this.broadcast(m); };
+    const note = (type, extra = '') => console.log(`[${this.user}] event ${type}${extra ? ' ' + extra : ''}`);
 
-    conn.on(WebcastEvent.CHAT, (d) => { sample(this.user, 'chat', d); B({ type: 'chat', ...who(d), text: String(d.content ?? d.comment ?? d.text ?? '') }); });
+    conn.on(WebcastEvent.CHAT, (d) => { sample(this.user, 'chat', d); const u = who(d); const text = String(d.content ?? d.comment ?? d.text ?? ''); note('chat', `${u.nick}: ${text.slice(0, 80)}`); B({ type: 'chat', ...u, text }); });
     conn.on(WebcastEvent.GIFT, (d) => {
       sample(this.user, 'gift', d);
       const u = who(d);
@@ -311,12 +372,13 @@ class Session {
         if (this.streaks.size > 5000) this.streaks.clear();
       }
       if (count <= 0) return;
+      note('gift', `${u.nick} ${giftName} x${count} (${coins} coins)`);
       B({ type: 'gift', ...u, giftName, giftId: gid, coins, count });
     });
     // v3: d.count = likes in this event (d.total = room total); 1.x: d.likeCount
-    conn.on(WebcastEvent.LIKE, (d) => { sample(this.user, 'like', d); B({ type: 'like', ...who(d), count: Math.max(1, Math.min(500, num(d.count, d.likeCount, 1))) }); });
-    conn.on(WebcastEvent.FOLLOW, (d) => { sample(this.user, 'follow', d); B({ type: 'follow', ...who(d) }); });
-    conn.on(WebcastEvent.SHARE, (d) => { sample(this.user, 'share', d); B({ type: 'share', ...who(d) }); });
+    conn.on(WebcastEvent.LIKE, (d) => { sample(this.user, 'like', d); const u = who(d); const count = Math.max(1, Math.min(500, num(d.count, d.likeCount, 1))); note('like', `${u.nick} x${count}`); B({ type: 'like', ...u, count }); });
+    conn.on(WebcastEvent.FOLLOW, (d) => { sample(this.user, 'follow', d); const u = who(d); note('follow', u.nick); B({ type: 'follow', ...u }); });
+    conn.on(WebcastEvent.SHARE, (d) => { sample(this.user, 'share', d); const u = who(d); note('share', u.nick); B({ type: 'share', ...u }); });
     conn.on(WebcastEvent.ROOM_USER, (d) => { sample(this.user, 'viewers', d); B({ type: 'viewers', count: num(d.total, d.totalUser, d.viewerCount, 0) }); });
     conn.on(WebcastEvent.STREAM_END, () => {
       if (this.conn !== conn) return;
@@ -336,25 +398,30 @@ class Session {
 
     try {
       if (this.mode !== 'offline') this.setState('connecting');
+      const looked = await lookupRoom(this.user);
+      if (this.closed || this.conn !== conn) return;
+      if (looked.roomId && looked.status === 4) {
+        const wait = rnd(20, 30);
+        console.log(`[${this.user}] not LIVE yet (room ${looked.roomId} via ${looked.source}), checking again in ${wait.toFixed(0)} s`);
+        this.setState('offline', 'not live yet');
+        this.scheduleRetry(wait);
+        return;
+      }
+      if (looked.roomId) console.log(`[${this.user}] room ${looked.roomId} via ${looked.source} (status ${looked.status ?? '?'})`);
+      else console.log(`[${this.user}] room lookup failed (${looked.error || 'unknown'}), trying the connector`);
       const state = await Promise.race([
-        conn.connect(),
+        looked.roomId ? conn.connect(looked.roomId) : conn.connect(),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timed out (TikTok did not answer)')), 60000))
       ]);
       if (this.closed || this.conn !== conn) { try { conn.disconnect(); } catch {} return; }
-      console.log(`[${this.user}] *** CONNECTED to LIVE (room ${state?.roomId}) ***`);
-      this.setState('live');
+      console.log(`[${this.user}] *** CONNECTED to LIVE (room ${state?.roomId || looked.roomId}) ***`);
+      this.setState('live', '');
     } catch (e) {
       if (this.closed || this.conn !== conn) return;
-      const name = e?.constructor?.name || '';
-      const offline = /offline/i.test(name) || /offline|not.*live/i.test(String(e?.message));
+      const why = explainConnectError(e);
       const wait = rnd(20, 30);
-      if (offline) {
-        console.log(`[${this.user}] not LIVE yet, checking again in ${wait.toFixed(0)} s`);
-        this.setState('offline', 'not live yet');
-      } else {
-        console.log(`[${this.user}] could not connect: ${e?.message || e} - retrying in ${wait.toFixed(0)} s`);
-        this.setState('offline', 'connect failed');
-      }
+      console.log(`[${this.user}] could not connect: ${why.detail} — retrying in ${wait.toFixed(0)} s`);
+      this.setState(why.offline ? 'offline' : 'error', why.text);
       this.scheduleRetry(wait);
     }
   }
@@ -432,5 +499,6 @@ server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log(`Yui (anime maid character): ${url}/yui/?user=YOUR_TIKTOK_NAME  (stream link: /yui/u/NAME)`);
   if (SIM_ONLY) console.log('No TikTok username in the link or config.json -> SIMULATOR mode (bots + test buttons).');
   else console.log(`Default TikTok account (config.json): @${username} - connects when the game page opens.`);
+  console.log(SIGN_KEY ? 'TikTok sign key: set (SIGN_API_KEY).' : 'TikTok sign key: not set. If room lookup is blocked, add SIGN_API_KEY from https://www.eulerstream.com');
   if (config.openBrowser !== false && !process.env.NO_BROWSER && !process.env.RENDER) openBrowser(url);
 });
