@@ -1,5 +1,5 @@
 {
-  "_help": "heal = HP added to the sender's hero (x number of gifts). power = sword, super (kung fu), pistol, rifle, airstrike, giant, ultimate (giant + airstrike), boost (rage). Gifts not in the list use byCoins (the gift's coin price).",
+  "_help": "Free-for-all: a like joins at 50 HP (once), a follow is 100 HP, and every gift adds 2x its coin value as HP (1 coin → 2, 100 coins → 200) plus a damage boost. The gift list below is no longer used for power-ups.",
 
   "joinWords": {
     "white": ["white", "1", "team white"],
