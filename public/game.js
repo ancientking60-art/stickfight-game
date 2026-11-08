@@ -211,15 +211,10 @@ function startWind(ac, out, t, dur) {
   const s = ac.createBufferSource(); s.buffer = L[0]; s.loop = true;
   const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.2 * (S.game.ambience ?? 1), t + 1.5);
   s.connect(g); g.connect(out); s.start(t); if (dur) s.stop(t + dur);
-  const R = SB.buf.rain; if (R && R.length && S.game.weather !== false && !QS.has('noweather')) {   // soft rain bed under the fight
-    const rs = ac.createBufferSource(); rs.buffer = R[0]; rs.loop = true;
-    const rg = ac.createGain(); rg.gain.setValueAtTime(0.0001, t); rg.gain.linearRampToValueAtTime(0.32, t + 2); ac._rainG = rg;
-    rs.connect(rg); rg.connect(out); rs.start(t); if (dur) rs.stop(t + dur);
-  }
 }
 // sound kind -> real sample layers. (p = voice pitch for shouts)
 const SMAP = {
-  thunder: (a, o, t, p) => smp(a, o, t, 'thunder', 0.75 * (p || 1), 1, 0.08),
+  thunder: () => {},   // rain and thunder audio are off; the picture of the storm stays
   step: (a, o, t) => smp(a, o, t, 'step', 0.4),
   jump: (a, o, t) => { smp(a, o, t, 'step', 0.55, 0.9); smp(a, o, t, 'whoosh', 0.25, 0.8); },
   land: (a, o, t) => { smp(a, o, t, 'step', 0.6, 0.85); smp(a, o, t, 'fall', 0.35, 1.2); },
@@ -3473,9 +3468,18 @@ function drawHUD() {
   tg.addColorStop(0, 'rgba(2,3,10,0.97)'); tg.addColorStop(0.78, 'rgba(2,3,10,0.88)'); tg.addColorStop(1, 'rgba(2,3,10,0)');
   ctx.fillStyle = tg; ctx.fillRect(0, 0, W, VIEW_TOP + 8);
   const m = S.live.mode;
-  const st = m === 'live' ? ['● LIVE  @' + (S.live.username || ''), '#ff3b5c'] : m === 'simulator' ? ['● TEST MODE', '#ffd23f'] : m === 'offline' ? ['● waiting for @' + (S.live.username || '') + ' to go LIVE', '#ffd0a0'] : m === 'error' ? ['● ' + (S.live.message || 'error'), '#ff8080'] : ['● connecting…', '#c9d6ff'];
-  const stHide = m === 'live' && performance.now() - (S.liveAt || 0) > 8000;
-  if (!QS.has('clean') && !stHide) { ctx.textAlign = 'left'; ctx.font = '20px Russo, Arial'; ctx.fillStyle = st[1]; ctx.fillText(st[0], 22, 30); }
+  const who = S.live.username ? '@' + S.live.username : '';
+  const why = String(S.live.message || '').replace(/\s+/g, ' ').trim().slice(0, 78);
+  let label, color;
+  if (m === 'live') { label = '● connected to ' + (who || 'TikTok'); color = '#7dffb0'; }
+  else if (m === 'simulator') { label = '● test mode'; color = '#ffd23f'; }
+  else if (m === 'offline') { label = '● ' + (who ? who + ' — ' : '') + (why || 'not live yet'); color = '#ffb15a'; }
+  else if (m === 'error') { label = '● ' + (why || 'connection error'); color = '#ff8080'; }
+  else { label = '● connecting to ' + (who || 'TikTok') + (why ? ' — ' + why : ''); color = '#d5def8'; }
+  ctx.textAlign = 'left';
+  let sfs = 20; ctx.font = sfs + 'px Russo, Arial';
+  while (sfs > 13 && ctx.measureText(label).width > W - 36) { sfs -= 1; ctx.font = sfs + 'px Russo, Arial'; }
+  outlined(label, 16, 30, sfs + 'px Russo, Arial', color, '#000', 4);
   if (S.viewers) { ctx.textAlign = 'right'; ctx.fillStyle = '#c9d6ff'; ctx.font = '20px Russo, Arial'; ctx.fillText(S.viewers + ' watching', W - 22, 30); }
   ctx.textAlign = 'center';
   const title = G_().title || 'STICK FIGHT';
@@ -3711,11 +3715,9 @@ function updateWeather(rdt) {
   if (!WX.nextBolt) WX.nextBolt = clock + rand(6, 12);
   if (clock >= WX.nextBolt) {
     WX.nextBolt = clock + (WX.boost > 0 ? rand(2.5, 4.5) : rand(12, 24));
-    WX.flash = 1; WX.bolt = makeBolt(); WX.thunderAt = clock + rand(0.25, 0.9);
+    WX.flash = 1; WX.bolt = makeBolt();
   }
   WX.flash = Math.max(0, WX.flash - rdt * 3.2);
-  if (WX.thunderAt && clock >= WX.thunderAt) { WX.thunderAt = 0; sfx('thunder', null, WX.boost > 0 ? 1 : 0.8); }
-  if (AU.ctx && AU.ctx._rainG) AU.ctx._rainG.gain.setTargetAtTime(0.22 + 0.25 * WX.k, AU.ctx.currentTime, 0.5);
 }
 function newDrop(any) {
   const gy = w2s(W / 2, FLOOR).y;
