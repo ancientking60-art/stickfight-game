@@ -54,16 +54,25 @@ RUN IT
 
   Your live:  http://localhost:3000/?user=YOUR_TIKTOK_NAME&clean=1
   Short link: /u/YOUR_TIKTOK_NAME
-  The page connects to that TikTok LIVE and keeps retrying until
-  you are live. A small line at the top stays on screen:
-  connecting / connected to @name / the error. clean=1 hides the
-  test box only. The name is remembered on that phone;
-  /?user=reset forgets it.
+  The page connects to that TikTok LIVE and keeps checking about
+  every 15 seconds for as long as the page is open. When a LIVE
+  ends, it waits and connects again when the next one starts.
+  The line at the top says one of:
+    Connecting...
+    Waiting for @NAME to go LIVE...
+    Connected to LIVE
+    TikTok blocked the lookup - retrying
+  "Waiting" means the account is offline or the last LIVE ended.
+  "Blocked" means TikTok and Euler both refused the lookup
+  (empty reply or 403), not that the person is offline.
+  clean=1 hides the test box only. The name is remembered on
+  that phone; /?user=reset forgets it.
 
-  If the line says "TikTok blocked lookup — set SIGN_API_KEY":
-  make a free key at https://www.eulerstream.com and add it on
-  Render as the environment variable SIGN_API_KEY, then redeploy.
-  Do not put the key in config.json.
+  If the line says the lookup was blocked: make a free key at
+  https://www.eulerstream.com and add it on Render as the
+  environment variable SIGN_API_KEY, then redeploy. Do not put
+  the key in config.json. That key lets the game ask Euler for
+  the room from Render's IP, where TikTok often returns nothing.
 
   Rain and thunder sounds are off. The storm is still drawn.
   Fight sounds and voices stay.
