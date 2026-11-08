@@ -871,7 +871,6 @@ class Fighter {
   update(dt) {
     const T = this;
     T.auraT -= dt; if ((T.auraT > 0 || T.superT > 0) && Math.random() < dt * 35) ember(T);
-    if (T.boltT > 0) T.boltT -= dt;
     T.invuln -= dt; T.flash -= dt; T.comboT -= dt; T.superT -= dt; T.dropT -= dt; T.comboPop -= dt; T.wallT -= dt;
     if (T.comboT <= 0) T.combo = 0;
     if (Math.abs(T.s - T.ts) > 0.005) T.s = lerp(T.s, T.ts, Math.min(1, dt * 4));
@@ -2141,7 +2140,7 @@ function applySkin(p) {
   const f = p.fighter;
   if (f && f.alive) {
     f.skin = p.skin;
-    if (!f.giant) f.ts = arenaScale() * (f.skin === 'giant' ? 1.28 : 1);
+    if (!f.giant) f.ts = arenaScale() * (f.skin === 'giant' ? 1.4 : 1);
   }
 }
 function arenaScale(n) {
@@ -2153,7 +2152,7 @@ function arenaScale(n) {
 }
 function refitScale() {
   const s = arenaScale();
-  for (const f of fighters) if (f.alive && !f.giant) f.ts = s * (f.skin === 'giant' ? 1.28 : 1);
+  for (const f of fighters) if (f.alive && !f.giant) f.ts = s * (f.skin === 'giant' ? 1.4 : 1);
 }
 function layoutX(i, n) {
   const pad = 130;
@@ -2433,8 +2432,7 @@ function onGift(ev) {
   const f = p.fighter && p.fighter.alive ? p.fighter : null;
   if (f) {
     f.maxHp += reward; f.hp += reward; f.giftDmg = dmg; f.name = p.nick;
-    f.boltT = Math.max(f.boltT || 0, clamp(6 + Math.min(reward, 400) / 200, 6, 8));
-    f.boltPow = clamp(0.7 + reward / 180, 0.7, 1.7);
+    f.auraT = Math.max(f.auraT, reward >= 40 ? 3.2 : 1.5);
     healFx(f); ring(f.x, f.cy(), reward >= 40 ? 140 : 80, '#ffd84a', 0.45, 6);
     floatText(f.x, f.y - 240 * f.s, '+' + reward + ' HP', '#4dff88', 36, 1.3);
     if (dmg >= 1.15) floatText(f.x + 10, f.y - 300 * f.s, 'x' + dmg.toFixed(2) + ' DMG', '#ffd84a', 30, 1.35);
@@ -2443,9 +2441,7 @@ function onGift(ev) {
   } else if (round.state !== 'end') {
     const spawned = dropOrQueue(p, '+' + reward, true);
     if (spawned) {
-      spawned.giftDmg = dmg;
-      spawned.boltT = Math.max(spawned.boltT || 0, clamp(6 + Math.min(reward, 400) / 200, 6, 8));
-      spawned.boltPow = clamp(0.7 + reward / 180, 0.7, 1.7);
+      spawned.giftDmg = dmg; spawned.auraT = Math.max(spawned.auraT, 2.4);
       if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + reward + ' POWER', '#ffd84a', 92, 1.5);
     }
     maybeStart();
@@ -2667,8 +2663,8 @@ function taper(a, b, wa, wm, wb) {
 let DC = ctx;   // current draw target for body shapes
 function disc(x, y, r) { DC.beginPath(); DC.arc(x, y, r, 0, TAU); DC.fill(); }
 // limb radii (x fighter size) - v8: thick, clean, almost even limbs like the sunset reference
-const R_UA = [8.2, 8.4, 7.4], R_FA = [7.2, 7.2, 6.6], R_TH = [10.0, 10.2, 8.8], R_SH = [8.6, 8.4, 7.8];
-const HEAD_K = 0.92;
+const R_UA = [12.7, 13.0, 11.5], R_FA = [11.5, 11.5, 10.6], R_TH = [15.8, 16.1, 13.7], R_SH = [13.7, 13.4, 12.2];
+const HEAD_K = 1.26;
 let DRAW_FISTS = false, LIMB_K = 1;
 function armPath(J, e, h, s, g) {
   const k = s * LIMB_K;
@@ -2680,13 +2676,13 @@ function legPath(J, k, f, s, g) {
   const m = s * LIMB_K;
   taper(J.hip, J[k], R_TH[0] * m + g, R_TH[1] * m + g, R_TH[2] * m + g);
   taper(J[k], J[f], R_SH[0] * m + g, R_SH[1] * m + g, R_SH[2] * m + g);
-  disc(J[f].x, J[f].y, 8.2 * m + g);
+  disc(J[f].x, J[f].y, 13.4 * m + g);
 }
 function torsoPath(J, s, g) {
   const m = s * LIMB_K;
   const sh = { x: lerp(J.neck.x, J.hip.x, 0.1), y: lerp(J.neck.y, J.hip.y, 0.1) };
-  taper(sh, J.hip, 10.4 * m + g, 10.8 * m + g, 9.4 * m + g);
-  taper(J.neck, J.head, 5.2 * m + g, 5.2 * m + g, 5.2 * m + g);
+  taper(sh, J.hip, 15.1 * m + g, 15.4 * m + g, 13.7 * m + g);
+  taper(J.neck, J.head, 7.7 * m + g, 7.7 * m + g, 7.7 * m + g);
   disc(J.head.x, J.head.y, J.hr * HEAD_K * LIMB_K + g);
 }
 function withSh(J) { if (!J.sh) J.sh = { x: lerp(J.neck.x, J.hip.x, 0.1), y: lerp(J.neck.y, J.hip.y, 0.1) }; return J; }
@@ -2729,33 +2725,13 @@ function glowSprite(hex) {
   GLOW_SPR.set(key, c);
   return c;
 }
-function drawLightning(J, s, color, pow, fade) {
+function inkGlow(J, s, color, alpha) {
   const spr = glowSprite(color);
-  const p = clamp(pow || 1, 0.6, 1.8);
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.9 * fade;
-  for (const k of ['hip', 'neck', 'head']) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, alpha);
+  for (const k of ['hip', 'neck', 'head', 'hF', 'hB', 'eF', 'eB', 'kF', 'kB']) {
     const q = J[k]; if (!q) continue;
-    const r = (k === 'hip' ? 78 : 58) * s * p;
+    const r = (k === 'hip' || k === 'head' ? 92 : 64) * s;
     ctx.drawImage(spr, q.x - r, q.y - r, r * 2, r * 2);
-  }
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.globalAlpha = fade;
-  const pts = [J.head, J.hF, J.hB, J.fF, J.hip].filter(Boolean);
-  for (let i = 0; i < 5; i++) {
-    const a = pts[i % pts.length];
-    let x = a.x, y = a.y;
-    ctx.beginPath(); ctx.moveTo(x, y);
-    for (let k = 0; k < 6; k++) {
-      const ang = clock * 14 + i * 1.9 + k * 1.3;
-      x += Math.cos(ang) * (10 + k * 4) * s * p;
-      y += Math.sin(ang * 1.4) * (12 + k * 3) * s * p;
-      ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = color; ctx.lineWidth = 3.2 * s; ctx.stroke();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.3 * s; ctx.stroke();
   }
   ctx.restore();
 }
@@ -2823,13 +2799,14 @@ function drawBody(J, team, s, flash, alpha = 1, skinName) {
   const t = TEAMS[team]; withSh(J);
   const skin = skinName ? skinOf(skinName) : null;
   DRAW_FISTS = false;
-  LIMB_K = skin && skin.big ? 0.78 : 1;
+  LIMB_K = skin && skin.big ? 1.55 : 1;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.save();
   if (skin) {
+    inkGlow(J, s, skin.glow, alpha);
     ctx.globalAlpha = alpha;
-    fillBody(J, s, skin.glow, 2.1 * s);
-  } else if (alpha > 0.35) glowPass(J, s, team, alpha * 0.35);
+    fillBody(J, s, skin.glow, 7 * s);
+  } else if (alpha > 0.35) glowPass(J, s, team, alpha);
   ctx.globalAlpha = alpha * (skin && skin.glitch && Math.floor(clock * 18) % 6 === 0 ? 0.35 : 1);
   const ink = flash ? '#ffffff' : (skin ? skin.ink : t.body);
   fillBody(J, s, skin && skin.line ? '#1a1814' : '#050506', skin && skin.line ? 2.4 * s : 3.2 * s);
@@ -2838,8 +2815,8 @@ function drawBody(J, team, s, flash, alpha = 1, skinName) {
   torsoPath(J, s, 0); legPath(J, 'kF', 'fF', s, 0); armPath(J, 'eF', 'hF', s, 0);
   if (skin && skin.big) {
     ctx.fillStyle = ink;
-    if (J.hF) disc(J.hF.x, J.hF.y, 9 * s);
-    if (J.hB) disc(J.hB.x, J.hB.y, 9 * s);
+    if (J.hF) disc(J.hF.x, J.hF.y, 16 * s);
+    if (J.hB) disc(J.hB.x, J.hB.y, 16 * s);
   }
   if (skin && skin.line) {
     ctx.strokeStyle = '#2c2822'; ctx.lineWidth = 1.3 * s; ctx.globalAlpha = alpha * 0.8;
@@ -3238,8 +3215,7 @@ function drawFighter(f) {
   if (skin.glitch) { ctx.save(); ctx.globalAlpha = 0.35; ctx.translate((Math.floor(clock * 24) % 2 ? 5 : -5) * s, 0); fillBody(J, s, '#ffffff', 0); ctx.restore(); }
   const squash = f.flash > 0 ? 0.9 : 1;
   if (squash !== 1 && J.hip) { ctx.save(); ctx.translate(J.hip.x, J.hip.y); ctx.scale(1.08, squash); ctx.translate(-J.hip.x, -J.hip.y); }
-  drawBody(J, f.team, s, f.flash > 0, blink ? 0.7 : 1, f.skin || 'ink');
-  if (f.boltT > 0) drawLightning(J, s, skin.glow, f.boltPow || 1, Math.min(1, f.boltT / 0.8));
+  drawBody(J, f.team, s * (f.skin === 'giant' ? 1.16 : 1), f.flash > 0, blink ? 0.7 : 1, f.skin || 'ink');
   if (squash !== 1) ctx.restore();
   if (!f.skin || f.weapon !== 'fists') drawWeapon(f);
   drawEyes(f);
