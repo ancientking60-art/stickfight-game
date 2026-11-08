@@ -8,7 +8,7 @@ const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const W = 1080, H = 1920, FLOOR = 1540, G = 3300;
 const VIEW_TOP = 220, VIEW_BOT = 1768, VIEW_CY = 994;   // fight window between the slim top and bottom HUD
-let BASE_S = 0.66;     // fighter size - config.json game.fighterSize
+let BASE_S = 1.32;    // fighter size - about 2x the old sticks. config.json game.fighterSize
 let GIANT_S = 1.6;
 const DMG_SCALE = 1.6; // global damage tuning (config "damage" multiplies this)
 const QS = new URLSearchParams(location.search);
@@ -71,10 +71,10 @@ function safeInsets() {
 function layoutView() {
   if (VIEW.fixed) { document.body.classList.add('fixed'); return; }
   const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
-  let dpr = window.devicePixelRatio || 1;
+  // TikTok Live Studio's link source reports devicePixelRatio 1. Draw at least 2x and let the
+  // browser scale it down, so a 1080x1920 source is a 2160x3840 picture with no extra bars.
+  let dpr = Math.max(window.devicePixelRatio || 1, 2);
   const ins = safeInsets(), aw = Math.max(1, vw - ins.l - ins.r), ah = Math.max(1, vh - ins.t - ins.b);
-  // Backing store is the real screen pixels (CSS size x devicePixelRatio). Never draw a small
-  // bitmap and let CSS stretch it. Portrait streams stay at least 1080x1920; landscape at least 1920x1080.
   const portrait = vh >= vw;
   let cw = Math.round(vw * dpr), ch = Math.round(vh * dpr);
   const minW = portrait ? 1080 : 1920, minH = portrait ? 1920 : 1080;
@@ -95,6 +95,8 @@ function layoutView() {
   if (cv.width !== cw) cv.width = cw;
   if (cv.height !== ch) cv.height = ch;
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ensureRasters();
 }
 // fill the bands above/below (or beside) the 9:16 game so the whole phone screen is used
 function paintBars() {
@@ -1170,7 +1172,8 @@ function finisher(A, D, h, dir) {
   sparks(D.x, D.cy(), dir, finalBlow ? 24 : 12, ['#fff', '#ffd84a', TEAMS[D.team].accent], 1.2);
   ring(D.x, D.cy(), finalBlow ? 130 : 70, '#ffffff', 0.35, finalBlow ? 8 : 5);
   sfx('ko', D.x);
-  bubble(D, '', '💀', { force: true, pri: 9, dur: 1.6, dead: true });
+  refereeSay(nameOf(D) + ' is knocked out!');
+  bubble(D, '', '💀', { force: true, pri: 9, dur: 0.85, dead: true });
   if (A) A.kills++;
   addFeed([[nameOf(A), A ? TEAMS[A.team].ui : '#ffd84a'], [' knocked out ', '#ffd84a'], [nameOf(D), TEAMS[D.team].ui]], 6);
   endSetPiece();
@@ -2143,7 +2146,9 @@ function dropOrQueue(p, announce, front) {
     addFeed([[p.nick, TEAMS[p.color].ui], [' is in — drops when a spot opens', '#ffd84a']]);
     return null;
   }
-  return spawnBody(p, gapX(), announce, round.state === 'fight' ? 0.75 : 2.8);
+  const f = spawnBody(p, gapX(), announce, round.state === 'fight' ? 0.75 : 2.8);
+  if (f) refereeSay(p.nick + ' drops in!');
+  return f;
 }
 function tryDropQueued() {
   if (round.state === 'end') return;
@@ -2151,21 +2156,31 @@ function tryDropQueued() {
     const p = waitQ.shift();
     p.queued = false;
     if (p.eliminated || (p.fighter && p.fighter.alive)) continue;
-    spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.75 : 2.8);
+    const f = spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.75 : 2.8);
+    if (f) refereeSay(p.nick + ' drops in!');
   }
 }
 function spawnRoster() {
+  // The champion stays. Knocked-out players are eliminated and are not in this list.
+  const champ = round.winnerF && round.winnerF.user && !round.winnerF.user.eliminated ? round.winnerF.user : null;
+  if (champ) champ.bonusHp = 0;
   fighters = [];
   ragdolls.length = 0;
   waitQ = [];
-  const list = [...roster.values()].filter((p) => !p.eliminated);
-  for (const p of list) { p.queued = false; p.fighter = null; }
-  if (!list.length) return;
-  const n = Math.min(pitMax(), list.length);
-  const start = pitRotate % list.length;
-  pitRotate += n;
-  for (let i = 0; i < list.length; i++) {
-    const p = list[(start + i) % list.length];
+  const rest = [...roster.values()].filter((p) => !p.eliminated && p !== champ);
+  for (const p of rest) { p.queued = false; p.fighter = null; }
+  if (champ) { champ.queued = false; champ.eliminated = false; champ.fighter = null; }
+  const order = [];
+  if (champ) order.push(champ);
+  if (rest.length) {
+    const start = pitRotate % rest.length;
+    for (let i = 0; i < rest.length; i++) order.push(rest[(start + i) % rest.length]);
+  }
+  if (!order.length) return;
+  const n = Math.min(pitMax(), order.length);
+  if (rest.length) pitRotate += Math.max(0, n - (champ ? 1 : 0));
+  for (let i = 0; i < order.length; i++) {
+    const p = order[i];
     if (i < n) spawnBody(p, layoutX(i, n), totalHp(p) + ' HP', 2.8);
     else enqueue(p, false);
   }
@@ -2201,7 +2216,9 @@ function endRound(winner) {
     const p = round.winnerF.user;
     if (p) p.wins = (p.wins || 0) + 1;
     confetti(150, [TEAMS[round.winnerF.team].ui, '#ffd84a', '#ffffff', '#7fb2ff']);
-    try { showTalk('win', { name: round.winnerF.name, who: round.winnerF, life: 6.4 }); } catch (e) {}
+    const champName = round.winnerF.name || 'The winner';
+    const champLine = champName + ' wins! ' + champName + ' stays on as champion!';
+    try { showTalk('win', { text: champLine, name: champName, who: round.winnerF, life: 6.4 }); } catch (e) {}
     sfx('fanfare'); sfx('crowd');
   } else callout('DRAW!', 'NOBODY LEFT STANDING', '#ffd84a', 120, 2);
 }
@@ -2373,6 +2390,7 @@ function onGift(ev) {
     maybeStart();
   }
   addFeed([[p.nick, TEAMS[p.color].ui], [' ' + label + ' → +' + reward + ' HP', '#4dff88'], [dmg >= 1.15 ? '  x' + dmg.toFixed(2) : '', '#ffd84a']]);
+  if (reward >= 100) refereeSay('Big gift from ' + p.nick + '!');
 }
 function onEvent(ev) {
   if (!ev || !ev.type) return;
@@ -2396,6 +2414,27 @@ const BGM = 420;
 const bg = document.createElement('canvas'); bg.width = W + BGM * 2; bg.height = H + BGM * 2;
 const CLW = W + BGM * 2, CLH = HZ + BGM - 120;
 const cl = document.createElement('canvas'); cl.width = CLW; cl.height = CLH;
+let rasterK = 1;
+function rasterScale() { return Math.max(1, VIEW.k || 1); }
+// Paint a cache at the same pixel density as the screen, then draw it at world size so it is not scaled up.
+function fitRaster(canvas, worldW, worldH) {
+  const k = rasterScale();
+  const pw = Math.max(1, Math.ceil(worldW * k)), ph = Math.max(1, Math.ceil(worldH * k));
+  if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+  const b = canvas.getContext('2d');
+  b.setTransform(k, 0, 0, k, 0, 0);
+  b.clearRect(0, 0, worldW, worldH);
+  b.imageSmoothingEnabled = true; b.imageSmoothingQuality = 'high';
+  return b;
+}
+function ensureRasters() {
+  const k = rasterScale();
+  if (Math.abs(k - rasterK) < 0.01 && bg.width > (W + BGM * 2) * k - 2) return;
+  rasterK = k;
+  arenaReady = false;
+  try { drawBackground(); } catch (e) {}
+  try { buildStorm(); } catch (e) {}
+}
 const SUN = { x: W * 0.17, y: HZ - 38, r: 46 };
 function seeded(seed) { let s = seed >>> 0 || 1; return () => ((s = (s * 16807) % 2147483647) / 2147483647); }
 // smooth rolling dune ridge: y(x) from a few sines
@@ -2435,7 +2474,7 @@ function drawCloud(b, x, y, w, h, r) {
   b.fillStyle = dark; for (let i = 0; i < 3; i++) { b.beginPath(); b.ellipse(x + (r() - 0.3) * w * 0.9, y + h * 0.3 + i * 3, w * (0.3 + r() * 0.3), 2.5 + r() * 3, 0, 0, TAU); b.fill(); }
 }
 function drawBackground() {
-  const b = bg.getContext('2d');
+  const b = fitRaster(bg, W + BGM * 2, H + BGM * 2);
   b.translate(BGM, BGM);
   const sky = b.createLinearGradient(0, -BGM, 0, HZ);
   // stops in world y: the purple part must be inside the visible game window (y ~ 300..HZ)
@@ -2455,7 +2494,7 @@ function drawBackground() {
   duneLayer(b, -BGM, W + BGM, HZ + 5, 60, 0.0048, 4.1, '#df9054', '#c47340', 140, 'rgba(255,200,130,0.45)', 'rgba(150,56,36,0.4)');
   b.fillStyle = '#c47340'; b.fillRect(-BGM, HZ + 50, W + BGM * 2, H + BGM);
   // drifting cloud layer (own canvas, tiles horizontally)
-  const c = cl.getContext('2d'), r = seeded(91);
+  const c = fitRaster(cl, CLW, CLH), r = seeded(91);
   c.translate(0, BGM);
   for (let i = 0; i < 34; i++) {
     const y = 250 + Math.pow(r(), 0.9) * (HZ - 230 - 250), x = r() * CLW;
@@ -2466,13 +2505,13 @@ function drawBackground() {
 let cloudDrift = 0;
 function drawSkyLive() {   // called in the parallax transform, right after the static sky
   cloudDrift = (clock * 7) % CLW;
-  ctx.drawImage(cl, -BGM - cloudDrift, -BGM); ctx.drawImage(cl, -BGM - cloudDrift + CLW, -BGM);
+  ctx.drawImage(cl, -BGM - cloudDrift, -BGM, CLW, CLH); ctx.drawImage(cl, -BGM - cloudDrift + CLW, -BGM, CLW, CLH);
 }
 // ---------- desert floor (world layer, moves exactly with the fighters): near dunes, sand plane, shrubs, rocks
 const AR = { x0: -900, y0: HZ - 140, w: W + 1800, h: H + 500 - (HZ - 140) };
 const arenaC = document.createElement('canvas'); arenaC.width = AR.w; arenaC.height = AR.h; let arenaReady = false;
 function buildArena() {
-  const b = arenaC.getContext('2d'); b.translate(-AR.x0, -AR.y0);
+  const b = fitRaster(arenaC, AR.w, AR.h); b.translate(-AR.x0, -AR.y0);
   const x0 = AR.x0, x1 = AR.x0 + AR.w;
   duneLayer(b, x0, x1, HZ + 30, 80, 0.0036, 2.2, '#d98a4c', '#bc6a36', 200, 'rgba(255,200,130,0.4)');
   duneLayer(b, x0, x1, HZ + 120, 95, 0.0029, 5.6, '#d08046', '#b0602f', 260, 'rgba(255,196,124,0.35)');
@@ -2520,7 +2559,7 @@ function drawDeco(d) {
 }
 function drawArena() {
   if (!arenaReady) buildArena();
-  ctx.drawImage(arenaC, AR.x0, AR.y0);
+  ctx.drawImage(arenaC, AR.x0, AR.y0, AR.w, AR.h);
   for (const d of DECO) drawDeco(d);
   // sandstone rock piles at the arena edges (the walls fighters bounce off), lit from the sun on the left
   for (const side of [-1, 1]) {
@@ -2559,17 +2598,17 @@ function taper(a, b, wa, wm, wb) {
 let DC = ctx;   // current draw target for body shapes
 function disc(x, y, r) { DC.beginPath(); DC.arc(x, y, r, 0, TAU); DC.fill(); }
 // limb radii (x fighter size) - v8: thick, clean, almost even limbs like the sunset reference
-const R_UA = [8.8, 9.0, 8.0], R_FA = [8.0, 8.0, 7.4], R_TH = [11.0, 11.2, 9.6], R_SH = [9.6, 9.4, 8.6];
+const R_UA = [10.6, 10.8, 9.6], R_FA = [9.6, 9.6, 8.8], R_TH = [13.2, 13.4, 11.4], R_SH = [11.4, 11.2, 10.2];
 const HEAD_K = 1.26;
 function armPath(J, e, h, s, g) {
   taper(J.sh || J.neck, J[e], R_UA[0] * s + g, R_UA[1] * s + g, R_UA[2] * s + g);
   taper(J[e], J[h], R_FA[0] * s + g, R_FA[1] * s + g, R_FA[2] * s + g);
-  disc(J[h].x, J[h].y, 9.2 * s + g);     // fist
+  disc(J[h].x, J[h].y, 11 * s + g);     // fist
 }
 function legPath(J, k, f, s, g) {
   taper(J.hip, J[k], R_TH[0] * s + g, R_TH[1] * s + g, R_TH[2] * s + g);
   taper(J[k], J[f], R_SH[0] * s + g, R_SH[1] * s + g, R_SH[2] * s + g);
-  disc(J[f].x, J[f].y, 9.4 * s + g);     // rounded foot
+  disc(J[f].x, J[f].y, 11.2 * s + g);     // rounded foot
 }
 function torsoPath(J, s, g) {
   const sh = { x: lerp(J.neck.x, J.hip.x, 0.1), y: lerp(J.neck.y, J.hip.y, 0.1) };
@@ -2583,37 +2622,21 @@ function fillBody(J, s, color, g = 0) {
   withSh(J); DC.fillStyle = color;
   armPath(J, 'eB', 'hB', s, g); legPath(J, 'kB', 'fB', s, g); torsoPath(J, s, g); legPath(J, 'kF', 'fF', s, g); armPath(J, 'eF', 'hF', s, g);
 }
-// soft glow halo: silhouette drawn solid on an offscreen canvas, then blurred onto the scene (no seams at the joints)
-const GLC = document.createElement('canvas'); GLC.width = W; GLC.height = H; const glx = GLC.getContext('2d');
-const HAS_FILTER = (() => { try { return 'filter' in CanvasRenderingContext2D.prototype && !QS.has('nofilter'); } catch (e) { return false; } })();
-const GLOW_KEYS = ['head', 'neck', 'hip', 'eF', 'hF', 'eB', 'hB', 'kF', 'fF', 'kB', 'fB'];
+// light crisp halo in the team colour. No blurred offscreen buffer (that was scaling up a soft picture).
 function glowPass(J, s, team, alpha) {
-  const t = TEAMS[team], T = ctx.getTransform(), sc = Math.hypot(T.a, T.b);
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const k of GLOW_KEYS) { const q = J[k]; if (!q) continue; const px = T.a * q.x + T.c * q.y + T.e, py = T.b * q.x + T.d * q.y + T.f; x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py); }
-  const blur = clamp(10 * sc * s / 0.66, 5, 34), pad = (J.hr * HEAD_K + 16 * s) * sc + blur * 2.5;
-  x0 = Math.max(0, Math.floor(x0 - pad)); y0 = Math.max(0, Math.floor(y0 - pad)); x1 = Math.min(W, Math.ceil(x1 + pad)); y1 = Math.min(H, Math.ceil(y1 + pad));
-  if (x1 - x0 < 2 || y1 - y0 < 2) return;
-  glx.setTransform(1, 0, 0, 1, 0, 0); glx.clearRect(x0, y0, x1 - x0, y1 - y0);
-  glx.setTransform(T); DC = glx; fillBody(J, s, `rgb(${t.glow})`, 4.5 * s); DC = ctx;
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = alpha * (team === 0 ? 0.95 : 1);
-  if (HAS_FILTER) {
-    ctx.filter = `blur(${(blur * VIEW.k).toFixed(1)}px)`;
-    ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
-    if (team === 1) ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);   // red needs a 2nd pass to read on sand
-  } else {   // draw the silhouette far off-screen and keep only its blurred shadow
-    const off = 20000, kk = VIEW.fixed ? 1 : VIEW.k;
-    ctx.shadowColor = `rgb(${t.glow})`; ctx.shadowBlur = blur * 2; ctx.shadowOffsetX = off * kk;
-    for (let i = 0; i < (team === 1 ? 2 : 1); i++) ctx.drawImage(GLC, x0, y0, x1 - x0, y1 - y0, x0 - off, y0, x1 - x0, y1 - y0);
-  }
+  const t = TEAMS[team];
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.22;
+  fillBody(J, s, `rgb(${t.glow})`, 4.2 * s);
   ctx.restore();
 }
 function drawBody(J, team, s, flash, alpha = 1) {
   const t = TEAMS[team]; withSh(J);
-  if (alpha > 0.05) glowPass(J, s, team, alpha);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (alpha > 0.35) glowPass(J, s, team, alpha);
   ctx.globalAlpha = alpha;
-  fillBody(J, s, t.rim, 2.2 * s);   // crisp bright outline (white / red)
+  fillBody(J, s, '#140806', 3.8 * s);   // dark outline under the colour
+  fillBody(J, s, t.rim, 1.25 * s);
   const front = flash ? t.flashC : t.body, rear = flash ? t.flashC : t.rear;
   ctx.fillStyle = rear; armPath(J, 'eB', 'hB', s, 0); legPath(J, 'kB', 'fB', s, 0);
   ctx.fillStyle = front; torsoPath(J, s, 0); legPath(J, 'kF', 'fF', s, 0); armPath(J, 'eF', 'hF', s, 0);
@@ -2691,6 +2714,20 @@ function drawFace(f) {
   const J = f.J, s = f.s, t = TEAMS[f.team], hr = J.hr * HEAD_K;
   if (!J || !J.head || !J.neck) return;
   const ang = Math.atan2(J.head.y - J.neck.y, J.head.x - J.neck.x) + PI / 2, fc = f.face * (f.spinFace || 1);
+  if (avatarReady(f)) {
+    const img = f.avatarRec.img, iw = img.naturalWidth, ih = img.naturalHeight, side = Math.min(iw, ih), r = hr * 0.92;
+    ctx.save();
+    ctx.translate(J.head.x, J.head.y); ctx.rotate(ang);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.clip();
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, -hr, -hr, hr * 2, hr * 2);
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(J.head.x, J.head.y, r, 0, TAU);
+    ctx.lineWidth = Math.max(2.6, hr * 0.14); ctx.strokeStyle = t.ui || '#fff'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(J.head.x, J.head.y, r + ctx.lineWidth * 0.45, 0, TAU);
+    ctx.lineWidth = Math.max(1.5, hr * 0.06); ctx.strokeStyle = '#140806'; ctx.stroke();
+    return;
+  }
   const hurt = f.mv && f.mv.d && f.mv.d.hurt;
   ctx.save(); ctx.translate(J.head.x, J.head.y); ctx.rotate(ang); ctx.scale(fc, 1);
   ctx.strokeStyle = t.eye; ctx.lineCap = 'round'; ctx.lineWidth = Math.max(1.6, hr * 0.17);
@@ -3010,7 +3047,8 @@ function bubble(f, text, emo = '', o = {}) {
   const said = text && o.say !== false && f.alive ? sayLine(f, text, { force: pri >= 8, react: o.say !== 'must' && pri < 8 }) : 0;
   if (!emo) return said;
   if (i >= 0) bubbles.splice(bubbles.findIndex((b) => b.f === f), 1);
-  bubbles.push({ f, text: '', emo, t: 0, dur: Math.max(o.dur || 1.5, said ? said + 0.3 : 0), pri });
+  while (bubbles.length >= 2) bubbles.shift();
+  bubbles.push({ f, text: '', emo, t: 0, dur: Math.min(o.dur || 0.85, 1.05), pri });
   f.bubbleCD = clock + (o.cd ?? 2.4);
   return said;
 }
@@ -3275,40 +3313,104 @@ function showTalk(kind, o = {}) {
   refereeSay(text);
   return true;
 }
-const REF = { q: [], speaking: false, unlocked: false };
-function pickRefVoice() {
-  if (!window.speechSynthesis) return null;
-  const voices = speechSynthesis.getVoices() || [];
+// Spoken lines are mp3s from /tts. TikTok Live Studio's link source has no speech voices,
+// but it will play an <audio> element by itself (no click). speechSynthesis is only a last resort.
+const REF = { q: [], playing: false, blocked: false, primed: false };
+let refPlayGen = 0;
+function refVolume() { return clamp(Number(S.game.refereeVolume ?? 1), 0, 1); }
+function refAudio() {
+  let el = document.getElementById('ref-audio');
+  if (!el) {
+    el = document.createElement('audio');
+    el.id = 'ref-audio';
+    el.autoplay = true;
+    el.setAttribute('playsinline', '');
+    el.preload = 'auto';
+    el.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function silentWavUrl() {
+  if (REF.silence) return REF.silence;
+  const sr = 8000, n = 160, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  REF.silence = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  return REF.silence;
+}
+function primeStudioAudio() {
+  if (REF.playing || (REF.q.length && !REF.blocked)) return;
+  const el = refAudio();
+  if (REF.primed) return;
+  el.volume = 0.01;
+  el.src = silentWavUrl();
+  const p = el.play();
+  if (p && p.then) p.then(() => { REF.primed = true; REF.blocked = false; el.volume = refVolume(); }, () => { REF.blocked = true; });
+}
+function speechFallback(text, next) {
+  const voices = (window.speechSynthesis && speechSynthesis.getVoices && speechSynthesis.getVoices()) || [];
+  if (!voices.length) { if (next) next(); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US'; u.rate = 1.05; u.pitch = 0.8; u.volume = refVolume();
   const en = voices.filter((v) => /^en([-_]|$)/i.test(v.lang || ''));
-  return en.find((v) => /daniel|david|aaron|guy|george|fred|rishi|male|uk english male/i.test(v.name)) || en.find((v) => /en-GB|en-US/i.test(v.lang)) || en[0] || null;
+  u.voice = en.find((v) => /guy|ryan|daniel|david|aaron|george|fred|rishi|male/i.test(v.name)) || en[0] || null;
+  u.onend = u.onerror = () => { if (next) next(); };
+  try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) { if (next) next(); }
+}
+function startRefLine(text) {
+  const el = refAudio();
+  const gen = ++refPlayGen;
+  let settled = false;
+  REF.playing = true;
+  REF.line = text;
+  el.volume = refVolume();
+  const finish = (why) => {
+    if (settled || gen !== refPlayGen) return;
+    settled = true;
+    REF.playing = false;
+    if (why === 'block') { REF.blocked = true; return; }
+    if (REF.q[0] === text) REF.q.shift();
+    if (why === 'error') speechFallback(text, () => pumpReferee());
+    else pumpReferee();
+  };
+  el.onended = () => finish('end');
+  el.onerror = () => { if (el.error && el.error.code === 1) return; finish('error'); };
+  const url = '/tts?text=' + encodeURIComponent(text);
+  if (el.getAttribute('data-line') !== text) {
+    el.setAttribute('data-line', text);
+    el.src = url;
+  } else {
+    try { el.currentTime = 0; } catch (e) {}
+  }
+  const p = el.play();
+  if (p && p.then) p.then(() => { REF.blocked = false; REF.primed = true; }, () => finish('block'));
 }
 function pumpReferee() {
-  if (REF.speaking || !REF.q.length || !window.speechSynthesis || S.game.refereeVoice === false) return;
-  if (!REF.unlocked) return;
-  const u = REF.q.shift();
-  REF.speaking = true;
-  u.onend = u.onerror = () => { REF.speaking = false; pumpReferee(); };
-  try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) { REF.speaking = false; }
+  if (REF.playing || !REF.q.length || S.game.refereeVoice === false) return;
+  startRefLine(REF.q[0]);
 }
 function refereeSay(text) {
-  if (!text || S.game.refereeVoice === false || !window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'en-US'; u.rate = 1.05; u.pitch = 0.8;
-  u.volume = clamp(Number(S.game.refereeVolume ?? 1), 0, 1);
-  const voice = pickRefVoice(); if (voice) u.voice = voice;
-  while (REF.q.length >= 2) REF.q.shift();
-  REF.q.push(u);
+  if (!text || S.game.refereeVoice === false) return;
+  const line = String(text).replace(/\s+/g, ' ').trim().slice(0, 180);
+  if (!line) return;
+  const cap = REF.playing ? 3 : 2;
+  while (REF.q.length >= cap) { if (REF.playing) REF.q.splice(1, 1); else REF.q.shift(); }
+  REF.q.push(line);
   pumpReferee();
 }
 function unlockReferee() {
-  if (!window.speechSynthesis) return;
-  REF.unlocked = true;
-  try { speechSynthesis.resume(); } catch (e) {}
-  if (!REF.primed) {
-    REF.primed = true;
-    try { const warm = new SpeechSynthesisUtterance(' '); warm.volume = 0; warm.rate = 1; speechSynthesis.speak(warm); } catch (e) {}
-  }
-  pumpReferee();
+  REF.blocked = false;
+  const el = refAudio();
+  if (el.paused) { const p = el.play(); if (p && p.catch) p.catch(() => {}); }
+  if (!REF.playing) pumpReferee();
+}
+function kickStudioAudio() {
+  primeStudioAudio();
+  if (REF.blocked && REF.q.length && !REF.playing) { REF.blocked = false; pumpReferee(); }
 }
 function talkHit(A) {
   if (!A || round.state !== 'fight' || clock < (talkHit.cd || 0)) return;
@@ -3350,7 +3452,7 @@ function drawBubbles() {
     const pop = b.t < 0.22 ? 1 + 0.25 * Math.sin(b.t / 0.22 * PI) - (1 - b.t / 0.22) * 0.9 : 1;
     const a = clamp((b.dur - b.t) / 0.25, 0, 1), sc = Math.max(0.1, pop) * zk;
     ctx.font = `${Math.round(66 * zk)}px Bangers, Impact, sans-serif`;
-    const tw = b.text ? ctx.measureText(b.text).width : 0, es = Math.round((b.text ? 96 : 140) * zk);
+    const tw = b.text ? ctx.measureText(b.text).width : 0, es = Math.round(46 * zk);
     const bw = b.text ? tw + 46 * zk : 0, bh = 92 * zk, gapE = b.text ? 10 * zk : 0;
     const totW0 = bw + (b.emo ? es + gapE : 0), fit = Math.min(1, (W - 40) / Math.max(1, totW0 * Math.max(1, pop)));   // long lines shrink to fit the screen
     const totW = totW0 * fit, bhS = bh * fit;
@@ -3397,7 +3499,7 @@ function drawWorldUI() {
     if (!f.alive || !f.J) continue;
     const top = Math.min(f.J.head.y, f.J.hF.y, f.J.hB.y, f.J.fF.y, f.J.fB.y) - f.J.hr - 8;
     const p = w2s(f.x, top);
-    if (avatarReady(f)) p.y -= fighters.filter((q) => q.alive).length > 8 ? 16 : 34;
+    p.x = Math.round(p.x * VIEW.k) / VIEW.k; p.y = Math.round(p.y * VIEW.k) / VIEW.k;
     p.y = clamp(p.y, VIEW_TOP + 28, VIEW_BOT - 20); tags.push([f, p]);
   }
   tags.sort((a, b) => a[1].x - b[1].x || a[1].y - b[1].y);
@@ -3431,8 +3533,9 @@ function drawWorldUI() {
   }
   for (const t of texts) {
     const p = w2s(t.x, t.y), a = clamp(t.life / t.max * 1.5, 0, 1), pop = 1 + Math.max(0, t.life - t.max + 0.12) * 4;
-    const y = clamp(p.y + t.oy, VIEW_TOP + 80, VIEW_BOT - 20), x = clamp(p.x, 90, W - 90);
-    ctx.globalAlpha = a; outlined(t.text, x, y, `${Math.round(t.size * pop * zk)}px Bangers, Impact, sans-serif`, t.color, '#000', 6);
+    const y0 = clamp(p.y + t.oy, VIEW_TOP + 80, VIEW_BOT - 20), x0 = clamp(p.x, 90, W - 90);
+    const x = Math.round(x0 * VIEW.k) / VIEW.k, y = Math.round(y0 * VIEW.k) / VIEW.k;
+    ctx.globalAlpha = a; outlined(t.text, x, y, `${Math.round(t.size * pop * zk)}px Bangers, Impact, sans-serif`, t.color, '#000', Math.max(4, Math.round(6 * zk)));
   }
   ctx.globalAlpha = 1;
   for (const p of planes) { const q = w2s(p.x - p.vx * 0.1, p.y - 70); outlined('AIRSTRIKE by ' + p.nick, clamp(q.x, 200, W - 200), clamp(q.y, VIEW_TOP + 80, VIEW_BOT), '28px Russo, Arial', '#ffd84a', '#000', 5); }
@@ -3786,10 +3889,11 @@ function w2s(x, y) {
 // ============================================================ v14 WEATHER: storm clouds, rain, splashes, lightning + thunder
 // Lightweight: rain = one batched stroke per frame, splashes capped, storm clouds pre-rendered once.
 const WX = { on: !QS.has('noweather'), drops: [], spl: [], boost: 0, k: 0.6, nextBolt: 0, bolt: null, flash: 0, thunderAt: 0 };
-const scl = document.createElement('canvas'); scl.width = CLW; scl.height = Math.round(HZ * 0.75 + BGM);
+const STORM_H = Math.round(HZ * 0.75 + BGM);
+const scl = document.createElement('canvas'); scl.width = CLW; scl.height = STORM_H;
 function buildStorm() {
   WX.on = S.game.weather !== false && !QS.has('noweather');
-  const c = scl.getContext('2d'), r = seeded(777); c.translate(0, BGM); try { c.filter = 'blur(5px)'; } catch (e) {}   // soft cloud edges (built once)
+  const c = fitRaster(scl, CLW, STORM_H), r = seeded(777); c.translate(0, BGM); try { c.filter = 'blur(' + (2.2 * rasterScale()).toFixed(1) + 'px)'; } catch (e) {}   // soft cloud edges, still full resolution
   for (let i = 0; i < 26; i++) {
     const y = 180 + r() * (HZ * 0.75 - 380), x = r() * CLW, w = 380 + r() * 520, h = 60 + r() * 70;
     for (const ox of [0, -CLW, CLW]) {
@@ -3800,6 +3904,7 @@ function buildStorm() {
       for (let k = 0; k < 6; k++) { c.beginPath(); c.ellipse(cx + (k / 5 - 0.5) * w * 0.8, y + Math.sin(k * 1.7 + i) * h * 0.3, w * (0.2 + r() * 0.12), h * (0.55 + r() * 0.35), 0, 0, TAU); c.fill(); }
     }
   }
+  try { c.filter = 'none'; } catch (e) {}
 }
 function updateWeather(rdt) {
   if (!WX.on) return;
@@ -3842,12 +3947,12 @@ function drawStormSky() {   // in the parallax transform, over the static sky + 
   ctx.globalAlpha = 0.28 + 0.2 * WX.k; ctx.fillStyle = '#1a0f2a'; ctx.fillRect(-BGM, -BGM, W + BGM * 2, HZ + BGM - 260);   // darker top, horizon glow kept
   ctx.globalAlpha = 0.55 + 0.35 * WX.k;
   const d = (clock * 22) % CLW, d2 = (clock * 9 + 600) % CLW;
-  ctx.drawImage(scl, -BGM - d, -BGM); ctx.drawImage(scl, -BGM - d + CLW, -BGM);
+  ctx.drawImage(scl, -BGM - d, -BGM, CLW, STORM_H); ctx.drawImage(scl, -BGM - d + CLW, -BGM, CLW, STORM_H);
   ctx.globalAlpha = 0.3 + 0.2 * WX.k;   // slower far layer (parallax depth)
-  ctx.drawImage(scl, -BGM - d2, -BGM - 120, CLW, scl.height * 0.8); ctx.drawImage(scl, -BGM - d2 + CLW, -BGM - 120, CLW, scl.height * 0.8);
+  ctx.drawImage(scl, -BGM - d2, -BGM - 120, CLW, STORM_H * 0.8); ctx.drawImage(scl, -BGM - d2 + CLW, -BGM - 120, CLW, STORM_H * 0.8);
   if (WX.flash > 0.05) {   // lightning lights the clouds from inside
     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35 * WX.flash;
-    ctx.drawImage(scl, -BGM - d, -BGM); ctx.drawImage(scl, -BGM - d + CLW, -BGM);
+    ctx.drawImage(scl, -BGM - d, -BGM, CLW, STORM_H); ctx.drawImage(scl, -BGM - d + CLW, -BGM, CLW, STORM_H);
     ctx.globalCompositeOperation = 'source-over';
   }
   ctx.globalAlpha = 1;
@@ -3884,7 +3989,7 @@ function render() {
   // parallax background (moves less than the fighters = depth)
   const zb = 1 + (V.z - 1) * 0.55, xb = W / 2 + (V.x - W / 2) * 0.7, yb = VIEW_CY + (V.y - VIEW_CY) * 0.7;
   ctx.translate(W / 2, VIEW_CY); ctx.rotate(V.r); ctx.scale(zb, zb); ctx.translate(-xb, -yb);
-  ctx.drawImage(bg, -BGM, -BGM);
+  ctx.drawImage(bg, -BGM, -BGM, W + BGM * 2, H + BGM * 2);
   drawSkyLive();
   drawStormSky();
   // world
@@ -3913,9 +4018,9 @@ function render() {
   drawRain();
   // screen space from here on
   drawOverlays();
-  drawAvatarBadges();
+  drawBubbles();
   drawWorldUI();
-  drawBubbles(); drawToasts();
+  drawToasts();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (cam.flash > 0) { ctx.globalAlpha = Math.min(0.6, cam.flash); ctx.fillStyle = cam.flashColor; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
   if (timeCtl.slowT > 0 || cam.ko) {   // cinematic letterbox during slow motion
@@ -4242,7 +4347,7 @@ async function boot() {
   } catch (e) {}
   if (QS.has('round')) S.game.roundSeconds = +QS.get('round');
   if (QS.has('hp')) S.game.heroHp = +QS.get('hp');
-  BASE_S = clamp(+S.game.fighterSize || 0.66, 0.4, 1.2); GIANT_S = BASE_S * 2.4;
+  BASE_S = clamp(+S.game.fighterSize || 1.32, 0.5, 1.8); GIANT_S = BASE_S * 2.2;
   // fonts: never wait more than 3 s (a slow or failed font must not keep the game from starting)
   try { if (document.fonts && document.fonts.load) await withTimeout(Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('20px Russo')]), 3000); } catch (e) {}
   safe('background', drawBackground);
@@ -4254,6 +4359,9 @@ async function boot() {
   safe('panel', setupPanel); safe('live', updateLiveInfo); safe('ws', connectWS);
   safe('sound', loadSamples);
   safe('sound', audioInit);   // works right away if the browser allows autoplay, otherwise after the first tap/key
+  safe('referee', kickStudioAudio);
+  setTimeout(() => safe('referee', kickStudioAudio), 400);
+  setTimeout(() => safe('referee', kickStudioAudio), 1400);
   safe('start', setupStart);
   safe('soundkeeper', setupSoundKeeper);
   safe('sw', registerSW);
@@ -4265,7 +4373,8 @@ async function boot() {
       round: round.state, n: round.n, winner: round.winnerF && round.winnerF.name,
       talk: talk.text, kind: talk.kind,
       fighters: fighters.filter((f) => f.alive).map((f) => ({ id: f.viewerId, name: f.name, hp: Math.round(f.hp), max: Math.round(f.maxHp), dmg: +((f.giftDmg || 1).toFixed(2)) })),
-      roster: [...roster.values()].map((pl) => ({ id: pl.id, nick: pl.nick, base: pl.baseHp, bonus: pl.bonusHp, queued: !!pl.queued }))
+      roster: [...roster.values()].map((pl) => ({ id: pl.id, nick: pl.nick, base: pl.baseHp, bonus: pl.bonusHp, queued: !!pl.queued, eliminated: !!pl.eliminated })),
+      ref: { q: REF.q.slice(), playing: REF.playing, blocked: REF.blocked }
     }),
     mostHurt: () => { let b = -1, bh = 1e9; for (let t = 0; t < NT; t++) { const h = heroOf(t); if (h && h.hp < bh) { bh = h.hp; b = t; } } return b; },
     sp: (name, first = 0, force = false) => { const a = heroOf(first), b = heroOf(1 - first); if (a && b && !duel.sp && round.state === 'fight' && [a, b].every((f) => f.onGround && !f.busy() && !f.held && f.invuln <= 0)) { const o = setPieceOptions2(a, b).find((c) => c.name === name); if (!o && !force) return false; startSetPiece(name, o && !force ? o.a : a, o && !force ? o.b : b); return true; } return false; },
