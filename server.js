@@ -275,7 +275,6 @@ async function loadLib() {
 }
 
 const sessions = new Map(); // lowercase username -> Session
-const rnd = (a, b) => a + Math.random() * (b - a);
 
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -284,39 +283,85 @@ const BROWSER_HEADERS = {
   'Referer': 'https://www.tiktok.com/'
 };
 const SIGN_KEY = String(process.env.SIGN_API_KEY || config.signApiKey || '').trim();
-// TikTok's own page still has the room id. The connector's lookup is often blocked
-// from a datacenter, which is the "Failed to retrieve Room ID" error on Render.
+const WAIT_RETRY_SEC = 15;
+const roomIdOf = (id) => {
+  const s = id == null ? '' : String(id).trim();
+  return s && s !== '0' ? s : '';
+};
+// A real answer that the person is not live (status 4, or a parsed page with no room).
+function offlineRoom(source, roomId, status) {
+  return { offline: true, roomId: roomIdOf(roomId), status: status == null || status === '' ? 4 : Number(status), source };
+}
+function liveRoom(source, roomId, status) {
+  return { offline: false, roomId: roomIdOf(roomId), status: status == null || status === '' ? 2 : Number(status), source };
+}
+// TikTok's own page and room API often come back empty from Render. Euler Stream
+// (SIGN_API_KEY) is asked before we tell the streamer the lookup was blocked.
 async function lookupRoom(uniqueId) {
   const errors = [];
   const roomFromHtml = (html) => {
-    const m = html.match(/<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/);
+    const m = html.match(/<script id="SIGI_STATE" type="application\/json">([\s\S]*?)<\/script>/);
     if (!m) return null;
-    const live = JSON.parse(m[1])?.LiveRoom?.liveRoomUserInfo;
-    const roomId = live?.user?.roomId;
-    if (!roomId) return null;
+    let live;
+    try { live = JSON.parse(m[1])?.LiveRoom?.liveRoomUserInfo; } catch { return null; }
+    if (!live) return null;
+    const roomId = roomIdOf(live?.user?.roomId);
     const status = live?.liveRoom?.status ?? live?.user?.status;
-    return { roomId: String(roomId), status: status == null ? null : Number(status), source: 'html' };
+    const st = status == null || status === '' ? null : Number(status);
+    if (st === 4) return offlineRoom('html', roomId, st);
+    if (roomId) return liveRoom('html', roomId, st);
+    return null;
   };
   try {
     const res = await fetch(`https://www.tiktok.com/@${encodeURIComponent(uniqueId)}/live`, { headers: BROWSER_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(12000) });
     const html = await res.text();
     const found = roomFromHtml(html);
     if (found) return found;
-    errors.push(html.includes('captcha') ? 'html: captcha' : 'html: no room id');
+    errors.push(!html.trim() || res.status === 403 ? 'html: empty or blocked' : html.includes('captcha') ? 'html: captcha' : 'html: no room id');
   } catch (e) { errors.push('html: ' + (e?.message || e)); }
   try {
     const res = await fetch(`https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&uniqueId=${encodeURIComponent(uniqueId)}`, {
       headers: { ...BROWSER_HEADERS, Accept: 'application/json' }, redirect: 'follow', signal: AbortSignal.timeout(12000)
     });
-    const j = await res.json();
-    const roomId = j?.data?.user?.roomId;
-    if (roomId) {
-      const status = j?.data?.liveRoom?.status ?? j?.data?.user?.status;
-      return { roomId: String(roomId), status: status == null ? null : Number(status), source: 'api' };
+    const text = await res.text();
+    if (res.status === 403 || res.status === 401 || !text.trim()) {
+      errors.push(res.status === 403 || res.status === 401 ? `api: ${res.status}` : 'api: empty body');
+    } else {
+      let j = null;
+      try { j = JSON.parse(text); } catch { errors.push('api: empty or broken JSON'); }
+      const data = j?.data;
+      if (data && typeof data === 'object') {
+        const roomId = roomIdOf(data.user?.roomId);
+        const status = data.liveRoom?.status ?? data.user?.status;
+        if (!roomId || Number(status) === 4) return offlineRoom('api', roomId, status);
+        return liveRoom('api', roomId, status);
+      } else if (j) errors.push('api: ' + (j.message || j.status_msg || 'no data'));
     }
-    errors.push('api: ' + (j?.message || j?.status_msg || 'no room'));
   } catch (e) { errors.push('api: ' + (e?.message || e)); }
-  return { error: errors.join(' | ') };
+  const euler = await lookupEuler(uniqueId);
+  if (euler?.roomId || euler?.offline) return euler;
+  if (euler?.error) errors.push(euler.error);
+  return { offline: false, error: errors.join(' | ') || 'lookup failed', blocked: true };
+}
+async function lookupEuler(uniqueId) {
+  if (!SIGN_KEY) return { error: 'euler: no SIGN_API_KEY' };
+  try {
+    const L = await loadLib();
+    if (!L?.createEulerClient || !L?.fetchRoomIdFromEulerRoute) return { error: 'euler: not in this connector' };
+    if (L.SignConfig) L.SignConfig.apiKey = SIGN_KEY;
+    const apiClient = L.createEulerClient();
+    const response = await Promise.race([
+      L.fetchRoomIdFromEulerRoute({ apiClient, uniqueId }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timed out')), 12000))
+    ]);
+    const code = Number(response?.code);
+    if (code === 401 || code === 402 || code === 403) return { error: 'euler: ' + (response?.message || code) };
+    const roomId = roomIdOf(response?.room_id);
+    if (response?.is_live === false || !roomId) return offlineRoom('euler', roomId, 4);
+    return liveRoom('euler', roomId, 2);
+  } catch (e) {
+    return { error: 'euler: ' + (e?.message || e) };
+  }
 }
 function explainConnectError(e) {
   const bits = [];
@@ -330,16 +375,13 @@ function explainConnectError(e) {
   walk(e, 0);
   const all = bits.join(' || ') || String(e);
   const offline = /UserOffline|isn't online|not live|offline/i.test(all);
-  let text = offline ? 'not live yet' : all.replace(/\s+/g, ' ').slice(0, 90);
-  if (!offline && /lack of permission|Euler|401|403|rate limit|Room ID/i.test(all)) {
-    text = SIGN_KEY ? 'TikTok blocked the lookup' : 'TikTok blocked lookup — set SIGN_API_KEY';
-  }
-  return { offline, text, detail: all.slice(0, 900) };
+  const blocked = !offline && /Failed to retrieve Room ID|empty body|Unexpected end of JSON|lack of permission|status code 403|\b403\b/i.test(all);
+  return { offline, blocked, detail: all.slice(0, 900) };
 }
 
 class Session {
   constructor(user) {
-    this.user = user; this.clients = new Set(); this.mode = 'connecting'; this.message = '';
+    this.user = user; this.clients = new Set(); this.mode = 'connecting'; this.message = 'Connecting...';
     this.conn = null; this.retryTimer = null; this.closed = false; this.streaks = new Map();
   }
   status() { return { mode: this.mode, username: this.user, message: this.message }; }
@@ -409,46 +451,51 @@ class Session {
     conn.on(WebcastEvent.STREAM_END, () => {
       if (this.conn !== conn) return;
       console.log(`[${this.user}] LIVE ended, waiting for the next LIVE`);
-      this.setState('offline', 'LIVE ended');
-      this.scheduleRetry(rnd(20, 30));
+      this.setState('offline', `Waiting for @${this.user} to go LIVE...`);
+      this.scheduleRetry(WAIT_RETRY_SEC);
     });
     conn.on(ControlEvent.DISCONNECTED, () => {
       if (this.conn !== conn || this.closed) return;
       if (this.mode === 'live') {
-        console.log(`[${this.user}] disconnected from TikTok, reconnecting in 10 s`);
-        this.setState('connecting', 'reconnecting');
-        this.scheduleRetry(10);
+        console.log(`[${this.user}] disconnected from TikTok, reconnecting in ${WAIT_RETRY_SEC} s`);
+        this.setState('connecting', 'Connecting...');
+        this.scheduleRetry(WAIT_RETRY_SEC);
       }
     });
     conn.on(ControlEvent.ERROR, (e) => console.log(`[${this.user}] TikTok error:`, e?.info || e?.message || e));
 
     try {
-      if (this.mode !== 'offline') this.setState('connecting');
+      this.setState('connecting', 'Connecting...');
       const looked = await lookupRoom(this.user);
       if (this.closed || this.conn !== conn) return;
-      if (looked.roomId && looked.status === 4) {
-        const wait = rnd(20, 30);
-        console.log(`[${this.user}] not LIVE yet (room ${looked.roomId} via ${looked.source}), checking again in ${wait.toFixed(0)} s`);
-        this.setState('offline', 'not live yet');
-        this.scheduleRetry(wait);
+      if (looked.offline) {
+        console.log(`[${this.user}] not LIVE yet${looked.roomId ? ' (room ' + looked.roomId + ')' : ''} via ${looked.source}, checking again in ${WAIT_RETRY_SEC} s`);
+        this.setState('offline', `Waiting for @${this.user} to go LIVE...`);
+        this.scheduleRetry(WAIT_RETRY_SEC);
         return;
       }
-      if (looked.roomId) console.log(`[${this.user}] room ${looked.roomId} via ${looked.source} (status ${looked.status ?? '?'})`);
-      else console.log(`[${this.user}] room lookup failed (${looked.error || 'unknown'}), trying the connector`);
+      if (!looked.roomId) {
+        console.log(`[${this.user}] room lookup failed (${looked.error || 'unknown'})${SIGN_KEY ? '' : ' — set SIGN_API_KEY from https://www.eulerstream.com so Render can ask Euler'}. Retrying in ${WAIT_RETRY_SEC} s`);
+        this.setState('error', 'TikTok blocked the lookup - retrying');
+        this.scheduleRetry(WAIT_RETRY_SEC);
+        return;
+      }
+      console.log(`[${this.user}] room ${looked.roomId} via ${looked.source} (status ${looked.status ?? '?'})`);
       const state = await Promise.race([
-        looked.roomId ? conn.connect(looked.roomId) : conn.connect(),
+        conn.connect(looked.roomId),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timed out (TikTok did not answer)')), 60000))
       ]);
       if (this.closed || this.conn !== conn) { try { conn.disconnect(); } catch {} return; }
       console.log(`[${this.user}] *** CONNECTED to LIVE (room ${state?.roomId || looked.roomId}) ***`);
-      this.setState('live', '');
+      this.setState('live', 'Connected to LIVE');
     } catch (e) {
       if (this.closed || this.conn !== conn) return;
       const why = explainConnectError(e);
-      const wait = rnd(20, 30);
-      console.log(`[${this.user}] could not connect: ${why.detail} — retrying in ${wait.toFixed(0)} s`);
-      this.setState(why.offline ? 'offline' : 'error', why.text);
-      this.scheduleRetry(wait);
+      console.log(`[${this.user}] could not connect: ${why.detail} — retrying in ${WAIT_RETRY_SEC} s`);
+      if (why.offline) this.setState('offline', `Waiting for @${this.user} to go LIVE...`);
+      else if (why.blocked) this.setState('error', 'TikTok blocked the lookup - retrying');
+      else this.setState('connecting', 'Connecting...');
+      this.scheduleRetry(WAIT_RETRY_SEC);
     }
   }
 }

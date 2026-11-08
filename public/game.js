@@ -3738,11 +3738,11 @@ function drawHUD() {
   const who = S.live.username ? '@' + S.live.username : '';
   const why = String(S.live.message || '').replace(/\s+/g, ' ').trim().slice(0, 78);
   let label, color;
-  if (m === 'live') { label = '● connected to ' + (who || 'TikTok'); color = '#7dffb0'; }
+  if (m === 'live') { label = '● Connected to LIVE'; color = '#7dffb0'; }
   else if (m === 'simulator') { label = '● test mode'; color = '#ffd23f'; }
-  else if (m === 'offline') { label = '● ' + (who ? who + ' — ' : '') + (why || 'not live yet'); color = '#ffb15a'; }
-  else if (m === 'error') { label = '● ' + (why || 'connection error'); color = '#ff8080'; }
-  else { label = '● connecting to ' + (who || 'TikTok') + (why ? ' — ' + why : ''); color = '#d5def8'; }
+  else if (m === 'offline') { label = '● Waiting for ' + (who || 'them') + ' to go LIVE...'; color = '#ffb15a'; }
+  else if (m === 'error') { label = '● ' + (why || 'TikTok blocked the lookup - retrying'); color = '#ff8080'; }
+  else { label = '● Connecting...'; color = '#d5def8'; }
   ctx.textAlign = 'left';
   let sfs = 20; ctx.font = sfs + 'px Russo, Arial';
   while (sfs > 13 && ctx.measureText(label).width > W - 36) { sfs -= 1; ctx.font = sfs + 'px Russo, Arial'; }
@@ -4233,7 +4233,8 @@ function setupPanel() {
 function updateLiveInfo() {
   const el = document.getElementById('liveInfo'); if (!el) return;
   const m = S.live.mode;
-  el.textContent = m === 'live' ? `Connected to @${S.live.username} LIVE` : m === 'simulator' ? 'TEST MODE: add ?user=yourname to the link' : m === 'offline' ? `@${S.live.username} is not LIVE yet - retrying` : 'Connecting to TikTok...';
+  const who = S.live.username ? '@' + S.live.username : 'them';
+  el.textContent = m === 'live' ? 'Connected to LIVE' : m === 'simulator' ? 'TEST MODE: add ?user=yourname to the link' : m === 'offline' ? 'Waiting for ' + who + ' to go LIVE...' : m === 'error' ? (S.live.message || 'TikTok blocked the lookup - retrying') : 'Connecting...';
 }
 
 // ============================================================ TAP TO START (sound + full screen on phones)
