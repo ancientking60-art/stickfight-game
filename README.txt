@@ -68,6 +68,16 @@ RUN IT
   Rain and thunder sounds are off. The storm is still drawn.
   Fight sounds and voices stay.
 
+  Trash talk is read out loud by a referee voice in the browser
+  (speechSynthesis). Turn it off with game.refereeVoice false in
+  config.json. Volume is game.refereeVolume (0 to 1). In OBS, turn
+  on "Control audio via OBS" for the browser source. If that browser
+  has no speech API, the words still show on screen.
+
+  A knocked-out fighter stays out. They only come back if that
+  person likes, follows, or sends a gift again. A like from someone
+  still fighting does not make a second stickman.
+
   Put your username in config.json "tiktokUsername" if you want a
   default. Leave it blank for test mode.
 

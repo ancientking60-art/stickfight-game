@@ -36,7 +36,7 @@
                touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   #wrap { position: fixed; left: 0; top: 0; right: 0; bottom: 0; }
   /* the canvas fills the whole screen; game.js sizes it in real screen pixels so it stays sharp */
-  canvas { background: #05060d; display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  canvas { background: #05060d; display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; image-rendering: auto; }
   /* recording mode (?manual) keeps the old fixed 1080x1920 canvas */
   body.fixed #wrap { display: flex; align-items: center; justify-content: center; }
   body.fixed canvas { position: static; height: 100vh; width: calc(100vh * 9 / 16); max-width: 100vw; max-height: calc(100vw * 16 / 9); }

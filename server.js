@@ -193,10 +193,10 @@ function firstUrl(v) {
 function avatarOf(data) {
   const d = data || {}, u = d.user || {}, details = u.userDetails || d.userDetails || {};
   const picks = [
-    d.profilePictureUrl, u.profilePictureUrl, details.profilePictureUrls, details.profilePictureUrl,
-    u.avatarMedium, u.avatarThumb, u.avatarLarge, u.avatarJpg,
-    d.avatarMedium, d.avatarThumb, d.avatarLarge,
-    u.profilePicture, d.profilePicture
+    u.avatarLarge, d.avatarLarge, u.avatarMedium, d.avatarMedium,
+    u.avatarJpg, d.avatarJpg, d.profilePictureUrl, u.profilePictureUrl,
+    details.profilePictureUrls, details.profilePictureUrl,
+    u.profilePicture, d.profilePicture, u.avatarThumb, d.avatarThumb
   ];
   for (const p of picks) {
     const s = firstUrl(p);
