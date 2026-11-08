@@ -8,7 +8,7 @@ const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const W = 1080, H = 1920, FLOOR = 1540, G = 3300;
 const VIEW_TOP = 220, VIEW_BOT = 1768, VIEW_CY = 994;   // fight window between the slim top and bottom HUD
-let BASE_S = 1.52;    // fighter size. config.json game.fighterSize
+let BASE_S = 1.1;     // about 28% smaller than the glove-pass size, and slimmer. config.json game.fighterSize
 let GIANT_S = 1.6;
 const DMG_SCALE = 1.6; // global damage tuning (config "damage" multiplies this)
 const QS = new URLSearchParams(location.search);
@@ -130,7 +130,7 @@ const EASE = {
 function wpick(list) { let s = 0; for (const c of list) s += c.w; let r = Math.random() * s; for (const c of list) { r -= c.w; if (r <= 0) return c; } return list[list.length - 1]; }
 
 const DEFAULT_SETTINGS = {
-  game: { roundSeconds: 90, likeHp: 50, followHp: 100, giftMultiplier: 2, maxFighters: 14, heroHp: 50, fighterSize: 1.52, damage: 1, suddenDeathDamage: 2, slowMotion: true, sound: true, volume: 0.8, refereeVoice: true, refereeVolume: 1, title: 'STICK FIGHT' },
+  game: { roundSeconds: 90, likeHp: 50, followHp: 100, giftMultiplier: 2, maxFighters: 14, heroHp: 50, fighterSize: 1.1, damage: 1, suddenDeathDamage: 2, slowMotion: true, sound: true, volume: 0.8, refereeVoice: true, refereeVolume: 1, title: 'STICK FIGHT' },
   gifts: {
     joinWords: { white: ['white', '1', 'team white'], black: ['black', '2', 'team black'] },
     likes: { every: 10, heal: 2 }, follow: { heal: 5 }, share: { heal: 5 }, maxShieldPercent: 150,
@@ -2598,7 +2598,7 @@ function taper(a, b, wa, wm, wb) {
 let DC = ctx;   // current draw target for body shapes
 function disc(x, y, r) { DC.beginPath(); DC.arc(x, y, r, 0, TAU); DC.fill(); }
 // limb radii (x fighter size) - v8: thick, clean, almost even limbs like the sunset reference
-const R_UA = [12.7, 13.0, 11.5], R_FA = [11.5, 11.5, 10.6], R_TH = [15.8, 16.1, 13.7], R_SH = [13.7, 13.4, 12.2];
+const R_UA = [8.4, 8.6, 7.6], R_FA = [7.4, 7.4, 6.8], R_TH = [10.2, 10.4, 9.0], R_SH = [8.8, 8.6, 8.0];
 const HEAD_K = 1.26;
 function armPath(J, e, h, s, g) {
   taper(J.sh || J.neck, J[e], R_UA[0] * s + g, R_UA[1] * s + g, R_UA[2] * s + g);
@@ -2608,12 +2608,12 @@ function armPath(J, e, h, s, g) {
 function legPath(J, k, f, s, g) {
   taper(J.hip, J[k], R_TH[0] * s + g, R_TH[1] * s + g, R_TH[2] * s + g);
   taper(J[k], J[f], R_SH[0] * s + g, R_SH[1] * s + g, R_SH[2] * s + g);
-  disc(J[f].x, J[f].y, 13.4 * s + g);     // rounded foot
+  disc(J[f].x, J[f].y, 8.4 * s + g);     // rounded foot
 }
 function torsoPath(J, s, g) {
   const sh = { x: lerp(J.neck.x, J.hip.x, 0.1), y: lerp(J.neck.y, J.hip.y, 0.1) };
-  taper(sh, J.hip, 15.1 * s + g, 15.4 * s + g, 13.7 * s + g);
-  taper(J.neck, J.head, 7.7 * s + g, 7.7 * s + g, 7.7 * s + g);
+  taper(sh, J.hip, 10.6 * s + g, 10.8 * s + g, 9.6 * s + g);
+  taper(J.neck, J.head, 5.4 * s + g, 5.4 * s + g, 5.4 * s + g);
   disc(J.head.x, J.head.y, J.hr * HEAD_K + g);
 }
 function withSh(J) { if (!J.sh) J.sh = { x: lerp(J.neck.x, J.hip.x, 0.1), y: lerp(J.neck.y, J.hip.y, 0.1) }; return J; }
@@ -2627,7 +2627,7 @@ function glowPass(J, s, team, alpha) {
   const t = TEAMS[team];
   ctx.save();
   ctx.globalAlpha = alpha * 0.22;
-  fillBody(J, s, `rgb(${t.glow})`, 5 * s);
+  fillBody(J, s, `rgb(${t.glow})`, 3.2 * s);
   ctx.restore();
 }
 function drawBody(J, team, s, flash, alpha = 1) {
@@ -2635,8 +2635,8 @@ function drawBody(J, team, s, flash, alpha = 1) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   if (alpha > 0.35) glowPass(J, s, team, alpha);
   ctx.globalAlpha = alpha;
-  fillBody(J, s, '#140806', 4.6 * s);   // dark outline under the colour
-  fillBody(J, s, t.rim, 1.5 * s);
+  fillBody(J, s, '#140806', 2.6 * s);   // thin dark outline under the colour
+  fillBody(J, s, t.rim, 1.05 * s);
   const front = flash ? t.flashC : t.body, rear = flash ? t.flashC : t.rear;
   ctx.fillStyle = rear; armPath(J, 'eB', 'hB', s, 0); legPath(J, 'kB', 'fB', s, 0);
   ctx.fillStyle = front; torsoPath(J, s, 0); legPath(J, 'kF', 'fF', s, 0); armPath(J, 'eF', 'hF', s, 0);
@@ -2653,9 +2653,9 @@ function gloveGeom(elbow, hand, s, g = 0) {
   const at = (x, y) => ({ x: hand.x + ax * x + px * y, y: hand.y + ay * x + py * y });
   return {
     ax, ay, px, py, ang: Math.atan2(ay, ax), hand,
-    fist: at(16 * s, 0), fistR: 16.2 * s + g,
-    thumb: at(6 * s, 11 * s), thumbR: 8 * s + g * 0.75,
-    cuffA: 6.4 * s + g * 0.4, cuffB: 12.6 * s + g * 0.65
+    fist: at(11.5 * s, 0), fistR: 11.6 * s + g,
+    thumb: at(4.4 * s, 8 * s), thumbR: 5.8 * s + g * 0.75,
+    cuffA: 4.6 * s + g * 0.4, cuffB: 9 * s + g * 0.65
   };
 }
 function fillGlove(G) {
@@ -4405,7 +4405,7 @@ async function boot() {
   } catch (e) {}
   if (QS.has('round')) S.game.roundSeconds = +QS.get('round');
   if (QS.has('hp')) S.game.heroHp = +QS.get('hp');
-  BASE_S = clamp(+S.game.fighterSize || 1.52, 0.5, 1.8); GIANT_S = BASE_S * 2.2;
+  BASE_S = clamp(+S.game.fighterSize || 1.1, 0.5, 1.8); GIANT_S = BASE_S * 2.2;
   // fonts: never wait more than 3 s (a slow or failed font must not keep the game from starting)
   try { if (document.fonts && document.fonts.load) await withTimeout(Promise.all([document.fonts.load('40px Bangers'), document.fonts.load('20px Russo')]), 3000); } catch (e) {}
   safe('background', drawBackground);
