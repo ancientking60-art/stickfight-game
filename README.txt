@@ -85,6 +85,10 @@ RUN IT
   unmuted. If the server cannot make the audio, the page tries the
   browser's own speech as a last resort, and the words still show.
 
+  Fighters are ink characters. A like is INK or SKETCH, a follow
+  is BLADE, GHOST, or TWINS, a big gift is GIANT, and the
+  current champion is RED. Knockouts are called ERASED.
+
   The winner stays in the pit for the next round at their join HP
   (50 for a like, 100 for a follow). The referee calls them the
   champion. Anyone who was knocked out stays out until that person
