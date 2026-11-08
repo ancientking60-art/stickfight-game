@@ -72,14 +72,26 @@ function layoutView() {
   if (VIEW.fixed) { document.body.classList.add('fixed'); return; }
   const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight);
   let dpr = window.devicePixelRatio || 1;
-  const ins = safeInsets(), aw = Math.max(1, vw - ins.l - ins.r), ah = Math.max(1, vh - ins.t - ins.b);   // notch / home bar
-  const kFull = Math.min(aw / W, ah / H) * dpr;
-  if (kFull > 1.5) dpr *= 1.5 / kFull;               // cap: never draw the game bigger than 1620x2880 (keeps phones fast)
-  const cw = Math.round(vw * dpr), ch = Math.round(vh * dpr);
+  const ins = safeInsets(), aw = Math.max(1, vw - ins.l - ins.r), ah = Math.max(1, vh - ins.t - ins.b);
+  // Backing store is the real screen pixels (CSS size x devicePixelRatio). Never draw a small
+  // bitmap and let CSS stretch it. Portrait streams stay at least 1080x1920; landscape at least 1920x1080.
+  const portrait = vh >= vw;
+  let cw = Math.round(vw * dpr), ch = Math.round(vh * dpr);
+  const minW = portrait ? 1080 : 1920, minH = portrait ? 1920 : 1080;
+  if (cw < minW || ch < minH) {
+    const boost = Math.max(minW / Math.max(1, cw), minH / Math.max(1, ch));
+    dpr *= boost; cw = Math.round(vw * dpr); ch = Math.round(vh * dpr);
+  }
+  const maxPx = 2160 * 3840;
+  if (cw * ch > maxPx) {
+    const s = Math.sqrt(maxPx / (cw * ch));
+    dpr *= s; cw = Math.round(vw * dpr); ch = Math.round(vh * dpr);
+  }
   let k = Math.min(aw * dpr / W, ah * dpr / H);
-  if (k > 1 && k < 1.02) k = 1;                        // ~1080-pixel-wide phones: exact 1:1 pixels, no resampling at all
-  VIEW.k = k; VIEW.gw = Math.round(W * k); VIEW.gh = Math.round(H * k);
+  if (k > 1 && k < 1.02) k = 1;
+  VIEW.k = k; VIEW.dpr = dpr; VIEW.gw = Math.round(W * k); VIEW.gh = Math.round(H * k);
   VIEW.ox = Math.floor(ins.l * dpr + (aw * dpr - VIEW.gw) / 2); VIEW.oy = Math.floor(ins.t * dpr + (ah * dpr - VIEW.gh) / 2);
+  cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
   if (cv.width !== cw) cv.width = cw;
   if (cv.height !== ch) cv.height = ch;
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
@@ -116,7 +128,7 @@ const EASE = {
 function wpick(list) { let s = 0; for (const c of list) s += c.w; let r = Math.random() * s; for (const c of list) { r -= c.w; if (r <= 0) return c; } return list[list.length - 1]; }
 
 const DEFAULT_SETTINGS = {
-  game: { roundSeconds: 90, likeHp: 50, followHp: 100, giftMultiplier: 2, maxFighters: 14, heroHp: 50, fighterSize: 0.66, damage: 1, suddenDeathDamage: 2, slowMotion: true, sound: true, volume: 0.8, title: 'STICK FIGHT' },
+  game: { roundSeconds: 90, likeHp: 50, followHp: 100, giftMultiplier: 2, maxFighters: 14, heroHp: 50, fighterSize: 0.66, damage: 1, suddenDeathDamage: 2, slowMotion: true, sound: true, volume: 0.8, refereeVoice: true, refereeVolume: 1, title: 'STICK FIGHT' },
   gifts: {
     joinWords: { white: ['white', '1', 'team white'], black: ['black', '2', 'team black'] },
     likes: { every: 10, heal: 2 }, follow: { heal: 5 }, share: { heal: 5 }, maxShieldPercent: 150,
@@ -796,7 +808,7 @@ class Fighter {
     this.pose = POSES.stance.slice(); this.pose[9] = this.pose[2]; this.J = null; this.ghosts = []; this.ghostT = 0;
     this.tr = {}; for (const k of TRAIL_KEYS) this.tr[k] = [];
     this.alive = true; this.walkPh = rand(0, 6); this.lastStep = 0; this.walkV = 0; this.aim = 0;
-    this.dropIn = !!o.dropIn; this.scripted = false; this.held = false;
+    this.dropIn = !!o.dropIn; this.scripted = false; this.held = false; this.lastTouch = 0;
     this.vo = { x: 0, y: 0 }; this.prevMode = null; this.prevHip = null;
     this.brain = new Brain(this);
     this.computeJoints();
@@ -1097,6 +1109,7 @@ function dealDamage(A, D, h, px, py, o = {}) {
   const dir = o.dir ?? (A ? A.face : 1);
   const dmg = Math.max(1, Math.round(h.dmg * (A ? A.dmgMul() : 1) * DMG_SCALE * dmgMods(D)));
   D.hp -= dmg; D.flash = 0.08;
+  D.lastTouch = clock; if (A) A.lastTouch = clock;
   const heavy = h.type !== 'light' && h.type !== 'gut';
   const big = h.type === 'blast' || h.type === 'launch';
   px = px ?? D.x - dir * 8 * D.s; py = py ?? D.cy();
@@ -1148,7 +1161,7 @@ function wallBounce(T, side, vx) {
 // the KO: impact frame, freeze, long slow motion, orbiting camera, ragdoll flies
 function finisher(A, D, h, dir) {
   D.hp = 0; D.alive = false; D.mv = null;
-  if (D.user) D.user.queued = false;
+  if (D.user) { D.user.eliminated = true; D.user.queued = false; waitQ = waitQ.filter((q) => q !== D.user); }
   const others = fighters.filter((f) => f.alive).length;
   const finalBlow = others <= 1 && !waitQ.length;
   const rd = makeRagdoll(D, dir * Math.max(700, (h.kx || 500) * (finalBlow ? 1.25 : 0.85)), Math.min(h.ky || -400, -400) - (finalBlow ? 450 : 180));
@@ -1280,9 +1293,23 @@ class Brain {
   onWallBounce(T) { if (!this.f.scripted) { this.queue = []; this.follow = 0.12; } }
   counterIn(t) { this.pendOn = true; this.pend = t + 0.2; }   // let the block/dodge read before the counter
   update(dt) {
-    const f = this.f, e = f.foe;
+    const f = this.f;
+    if (f._foe && !f._foe.alive) f._foe = null;
+    let e = f.foe;
     f.walkV = 0;
     this.noReactT -= dt;
+    const others = fighters.some((x) => x !== f && x.alive);
+    if (e && others && round.state === 'fight' && !f.scripted && !f.held && clock - (f.lastTouch || 0) > 3) {
+      f._foe = null; e = f.foe; f.lastTouch = clock;
+      if (e && f.onGround) {
+        f.face = e.x >= f.x ? 1 : -1;
+        const far = Math.abs(e.x - f.x) > 150 * f.s;
+        f.mv = null; this.queue = []; this.pendOn = false;
+        if (far) { f.walkV = f.face * 640; f.play(Math.abs(e.x - f.x) < 320 * f.s ? 'flyknee' : 'stepIn'); }
+        else this.attack(false);
+        return;
+      }
+    }
     if (!e || f.scripted || round.state !== 'fight' || f.held) return;
     const M = f.mv;
     if (M && this.queue.length && this.chainOK && ((M.d.cancel != null && M.t >= M.d.cancel) || (M.d.cancel == null && M.t >= (M.d.dur || 9) - 0.04))) { this.next(); return; }
@@ -1308,6 +1335,18 @@ class Brain {
     const f = this.f, s = f.s, dx = e.x - f.x, dist = Math.abs(dx), u = dist / s, dy = e.y - f.y;
     f.face = dx >= 0 ? 1 : -1;
     this.think -= dt;
+    const crowd = fighters.reduce((n, x) => n + (x.alive ? 1 : 0), 0) > 2;
+    if (crowd && f.onGround && !f.isGun()) {
+      if (u > 145) {
+        f.walkV = f.face * (u > 260 ? 660 : 480);
+        if (this.think <= 0) { this.think = rand(0.1, 0.26); if (u < 340) f.play(u < 220 ? 'flyknee' : 'stepIn'); }
+        return;
+      }
+      if (this.think > 0) { f.walkV = f.face * 140; return; }
+      this.think = rand(0.14, 0.34);
+      this.attack(false);
+      return;
+    }
     const want = f.weapon === 'sword' ? 150 : f.isGun() ? 320 : 125;
     if (e.invuln > 0 || (e.mv && e.mv.d.lie)) {      // enemy is down: give space, taunt
       if (u < want) f.walkV = -f.face * 220;
@@ -1524,7 +1563,11 @@ function endSetPiece() {
 function updateDirector(dt) {
   const liveNow = fighters.reduce((n, f) => n + (f.alive ? 1 : 0), 0);
   // Choreographed 1v1 set pieces only while the pit is a duel. A crowd just brawls.
-  if (round.state !== 'fight' || liveNow !== 2) { if (duel.sp) endSetPiece(); return; }
+  if (round.state !== 'fight' || liveNow !== 2) {
+    if (duel.sp) endSetPiece();
+    duel.calm = Math.max(0, duel.calm - dt);   // a crowd must not freeze on the 1v1 "wait" timer
+    return;
+  }
   if (duel.sp) {
     const sp = duel.sp; sp.t += dt;
     if (!sp.a.alive || !sp.b.alive) { endSetPiece(); return; }
@@ -2042,7 +2085,7 @@ function makePlayer(ev, baseHp) {
     nick: String(ev.nick || ev.id || 'viewer').replace(/\s+/g, ' ').trim().slice(0, 18) || 'viewer',
     color: pickColor(),
     baseHp, bonusHp: 0, coins: 0, wins: 0,
-    fighter: null, queued: false, avatarUrl: '', avatarRec: null
+    fighter: null, queued: false, eliminated: false, avatarUrl: '', avatarRec: null
   };
 }
 function arenaScale(n) {
@@ -2079,6 +2122,7 @@ function spawnBody(p, x, announce, invuln) {
     name: p.nick, giftDmg: giftDmgOf(p), user: p, viewerId: p.id
   });
   f.avatarRec = p.avatarRec || null;
+  f.lastTouch = clock;
   f.announce = announce || '';
   p.fighter = f; p.queued = false;
   fighters.push(f);
@@ -2106,7 +2150,7 @@ function tryDropQueued() {
   while (aliveCount() < pitMax() && waitQ.length) {
     const p = waitQ.shift();
     p.queued = false;
-    if (p.fighter && p.fighter.alive) continue;
+    if (p.eliminated || (p.fighter && p.fighter.alive)) continue;
     spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.75 : 2.8);
   }
 }
@@ -2114,7 +2158,7 @@ function spawnRoster() {
   fighters = [];
   ragdolls.length = 0;
   waitQ = [];
-  const list = [...roster.values()];
+  const list = [...roster.values()].filter((p) => !p.eliminated);
   for (const p of list) { p.queued = false; p.fighter = null; }
   if (!list.length) return;
   const n = Math.min(pitMax(), list.length);
@@ -2185,7 +2229,7 @@ function updateRound(dt) {
     }
     if (round.t >= 2.5) {
       round.state = 'fight'; round.t = 0; round.startedWith = Math.max(2, aliveCount());
-      for (const f of fighters) if (f.alive) f.invuln = Math.min(f.invuln, 0.2);
+      for (const f of fighters) if (f.alive) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
       callout('FIGHT!', '', '#ff4545', 170, 0.9);
       sfx('go'); sfx('crowd'); shake(10);
       talkAt = clock + 2.6;
@@ -2225,13 +2269,25 @@ function rememberNick(p, ev) {
   }
   applyAvatar(p, ev);
 }
+function bringBack(p, announce) {
+  p.eliminated = false;
+  if (p.fighter && p.fighter.alive) return p.fighter;
+  const back = dropOrQueue(p, announce, true);
+  maybeStart();
+  return back;
+}
 function onLike(ev) {
   const id = pid(ev);
   let p = roster.get(id);
   if (p) {
     rememberNick(p, ev);
-    if (p.fighter && p.fighter.alive) floatText(p.fighter.x, p.fighter.y - 210 * p.fighter.s, '♥', '#ff7ab0', 28, 0.55);
-    else addFeed([[p.nick, TEAMS[p.color].ui], [' already in the pit', '#ff9cc4']]);
+    if (p.fighter && p.fighter.alive) { floatText(p.fighter.x, p.fighter.y - 210 * p.fighter.s, '♥', '#ff7ab0', 28, 0.55); return; }
+    if (p.eliminated) {
+      addFeed([[p.nick, TEAMS[p.color].ui], [' liked back in', '#ff9cc4']]);
+      bringBack(p, totalHp(p) + ' HP');
+      return;
+    }
+    addFeed([[p.nick, TEAMS[p.color].ui], [' already in the pit', '#ff9cc4']]);
     return;
   }
   p = makePlayer(ev, LIKE_HP());
@@ -2275,7 +2331,13 @@ function onFollow(ev) {
   }
   rememberNick(p, ev);
   const before = p.baseHp;
+  const out = p.eliminated || !(p.fighter && p.fighter.alive);
   grantFollow(p);
+  if (out && !p.queued) {
+    addFeed([[p.nick, '#7fb2ff'], [' followed back in', '#7fb2ff']]);
+    bringBack(p, totalHp(p) + ' HP');
+    return;
+  }
   addFeed([[p.nick, '#7fb2ff'], [before < FOLLOW_HP() ? ' followed — HP raised to ' + FOLLOW_HP() : ' followed', '#7fb2ff']]);
 }
 function onGift(ev) {
@@ -2288,7 +2350,7 @@ function onGift(ev) {
     p = makePlayer(ev, LIKE_HP());
     roster.set(id, p);
     applyAvatar(p, ev);
-  } else rememberNick(p, ev);
+  } else { rememberNick(p, ev); if (p.eliminated) p.eliminated = false; }
   p.bonusHp += reward;
   p.coins += coins * count;
   const dmg = giftDmgOf(p);
@@ -2613,6 +2675,7 @@ function drawAvatarBadges() {
     const img = f.avatarRec.img, p = w2s(f.J.head.x, f.J.head.y);
     const iw = img.naturalWidth, ih = img.naturalHeight, side = Math.min(iw, ih);
     ctx.save();
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.clip();
     ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, p.x - R, p.y - R, R * 2, R * 2);
     ctx.restore();
@@ -3209,7 +3272,43 @@ function showTalk(kind, o = {}) {
   const life = (o && o.life) || (kind === 'win' ? 6.4 : kind === 'signature' ? 2.7 : 3.4);
   talk.text = text; talk.kind = kind; talk.pri = pri; talk.life = life; talk.max = life;
   talk.name = (o && o.name) || ''; talk.who = (o && o.who) || null;
+  refereeSay(text);
   return true;
+}
+const REF = { q: [], speaking: false, unlocked: false };
+function pickRefVoice() {
+  if (!window.speechSynthesis) return null;
+  const voices = speechSynthesis.getVoices() || [];
+  const en = voices.filter((v) => /^en([-_]|$)/i.test(v.lang || ''));
+  return en.find((v) => /daniel|david|aaron|guy|george|fred|rishi|male|uk english male/i.test(v.name)) || en.find((v) => /en-GB|en-US/i.test(v.lang)) || en[0] || null;
+}
+function pumpReferee() {
+  if (REF.speaking || !REF.q.length || !window.speechSynthesis || S.game.refereeVoice === false) return;
+  if (!REF.unlocked) return;
+  const u = REF.q.shift();
+  REF.speaking = true;
+  u.onend = u.onerror = () => { REF.speaking = false; pumpReferee(); };
+  try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) { REF.speaking = false; }
+}
+function refereeSay(text) {
+  if (!text || S.game.refereeVoice === false || !window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US'; u.rate = 1.05; u.pitch = 0.8;
+  u.volume = clamp(Number(S.game.refereeVolume ?? 1), 0, 1);
+  const voice = pickRefVoice(); if (voice) u.voice = voice;
+  while (REF.q.length >= 2) REF.q.shift();
+  REF.q.push(u);
+  pumpReferee();
+}
+function unlockReferee() {
+  if (!window.speechSynthesis) return;
+  REF.unlocked = true;
+  try { speechSynthesis.resume(); } catch (e) {}
+  if (!REF.primed) {
+    REF.primed = true;
+    try { const warm = new SpeechSynthesisUtterance(' '); warm.volume = 0; warm.rate = 1; speechSynthesis.speak(warm); } catch (e) {}
+  }
+  pumpReferee();
 }
 function talkHit(A) {
   if (!A || round.state !== 'fight' || clock < (talkHit.cd || 0)) return;
@@ -3421,7 +3520,7 @@ function drawTalkBanner() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = a;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const labels = { before: 'BEFORE THE FIGHT', during: 'TRASH TALK', win: 'WINNER', audience: 'HEY CHAT', signature: 'BIG HIT' };
+  const labels = { before: 'REFEREE', during: 'REFEREE', win: 'REFEREE', audience: 'REFEREE', signature: 'REFEREE' };
   const accents = { before: '#ffd84a', during: '#ff7b7b', win: '#ffd84a', audience: '#8ec8ff', signature: '#ffb15a' };
   const accent = accents[talk.kind] || '#ffffff';
   let fs = talk.kind === 'signature' || talk.kind === 'win' ? 50 : 44;
@@ -3445,10 +3544,18 @@ function drawTalkBanner() {
   roundRect(-bw / 2, -bh / 2, bw, bh, 26); ctx.fill();
   ctx.lineWidth = 7; ctx.strokeStyle = accent; ctx.stroke();
   ctx.fillStyle = accent; ctx.fillRect(-bw / 2 + 22, -bh / 2 + 8, bw - 44, 7);
-  ctx.font = '30px Bangers, Impact, sans-serif';
+  ctx.save();
+  ctx.translate(-bw / 2 + 46, -bh / 2 + 36);
+  ctx.fillStyle = '#f4f7ff'; ctx.beginPath(); ctx.ellipse(0, 0, 16, 11, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(12, -3, 16, 6);
+  ctx.beginPath(); ctx.arc(28, 0, 4, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.font = '32px Bangers, Impact, sans-serif';
   ctx.fillStyle = accent;
-  const lab = talk.kind === 'win' && talk.name ? String(talk.name).slice(0, 16).toUpperCase() : (labels[talk.kind] || 'TRASH TALK');
-  ctx.fillText(lab, 0, -bh / 2 + 34);
+  ctx.textAlign = 'left';
+  ctx.fillText('REFEREE', -bw / 2 + 78, -bh / 2 + 38);
+  ctx.textAlign = 'center';
   ctx.font = fs + 'px Russo, Arial, sans-serif';
   ctx.lineWidth = Math.max(6, fs * 0.14); ctx.strokeStyle = '#000'; ctx.fillStyle = '#ffffff'; ctx.lineJoin = 'round';
   lines.forEach((ln, i) => {
@@ -3945,11 +4052,11 @@ function setupPanel() {
   bind('newRoundBtn', newRound);
   const ab = document.getElementById('autoBtn'); if (ab) ab.classList.toggle('on', sim.auto);
   const sb = document.getElementById('soundBtn'); if (sb) sb.textContent = 'Sound ON (M)';
-  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click']) window.addEventListener(ev, () => { if (!audioRunning()) audioInit(); }, { passive: true });
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click']) window.addEventListener(ev, () => { unlockReferee(); if (!audioRunning()) audioInit(); }, { passive: true });
   window.addEventListener('keydown', (e) => {
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    audioInit();
+    audioInit(); unlockReferee();
     if (e.code === 'KeyH') panel.classList.toggle('hidden');
     else if (e.code === 'KeyL') likeBtn();
     else if (e.code === 'KeyK') likeAgainBtn();
@@ -3993,7 +4100,7 @@ function setupStart() {
   const hide = () => { tap.classList.add('hidden'); };
   const start = (e) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
-    SK.armed = true; startSound(); goFullscreen(); hide(); started = true; setTimeout(sndUpdate, 1200);
+    SK.armed = true; startSound(); unlockReferee(); goFullscreen(); hide(); started = true; setTimeout(sndUpdate, 1200);
   };
   tap.addEventListener('click', start);
   // phone with no TikTok name (no link name, nothing saved): ask once, then it is remembered
@@ -4014,10 +4121,8 @@ function setupStart() {
   // phones always get the overlay (sound + full screen need a tap). On a PC it only shows if the browser blocked the sound;
   // in a PC LIVE Studio/OBS browser source (?clean) it never blocks the picture for more than 8 s.
   setTimeout(() => {
-    if (IS_TOUCH || !audioRunning()) {
-      tap.classList.remove('hidden');
-      if (!IS_TOUCH && QS.has('clean')) setTimeout(hide, 8000);
-    }
+    if (QS.has('clean')) return;   // stream link stays clean; any tap still turns sound on
+    if (IS_TOUCH || !audioRunning()) tap.classList.remove('hidden');
   }, 350);
   // left full screen (back button / swipe)? show a small hint; any tap goes full screen again
   const onFs = () => {
