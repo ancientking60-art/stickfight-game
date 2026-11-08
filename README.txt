@@ -68,15 +68,19 @@ RUN IT
   Rain and thunder sounds are off. The storm is still drawn.
   Fight sounds and voices stay.
 
-  Trash talk is read out loud by a referee voice in the browser
-  (speechSynthesis). Turn it off with game.refereeVoice false in
-  config.json. Volume is game.refereeVolume (0 to 1). In OBS, turn
-  on "Control audio via OBS" for the browser source. If that browser
-  has no speech API, the words still show on screen.
+  Trash talk is spoken by the referee as a real audio file. The
+  game asks the server (/tts) and plays the mp3. TikTok Live Studio's
+  link source (and OBS) plays it by itself — no click. Turn the voice
+  off with game.refereeVoice false in config.json. Volume is
+  game.refereeVolume (0 to 1). In Live Studio, leave the link source
+  unmuted. If the server cannot make the audio, the page tries the
+  browser's own speech as a last resort, and the words still show.
 
-  A knocked-out fighter stays out. They only come back if that
-  person likes, follows, or sends a gift again. A like from someone
-  still fighting does not make a second stickman.
+  The winner stays in the pit for the next round at their join HP
+  (50 for a like, 100 for a follow). The referee calls them the
+  champion. Anyone who was knocked out stays out until that person
+  likes, follows, or sends a gift again. A like from someone still
+  fighting does not make a second stickman.
 
   Put your username in config.json "tiktokUsername" if you want a
   default. Leave it blank for test mode.

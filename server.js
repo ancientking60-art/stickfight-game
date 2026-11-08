@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
+import { speak, warmReferee, ttsEngine, cleanTtsText } from './tts.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -73,6 +74,30 @@ async function proxyAvatar(raw, res) {
   }
 }
 
+function handleTts(url, res) {
+  const text = cleanTtsText(url.searchParams.get('text'));
+  if (!text) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('missing text');
+    return;
+  }
+  speak(text).then((buf) => {
+    if (res.writableEnded) return;
+    res.writeHead(200, {
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': String(buf.length),
+      'Cache-Control': 'public, max-age=86400',
+      'X-TTS-Engine': ttsEngine()
+    });
+    res.end(buf);
+  }).catch((e) => {
+    console.log('tts failed:', e && e.message ? e.message : e);
+    if (res.writableEnded) return;
+    res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('tts failed');
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/settings.json') {
@@ -87,6 +112,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url.pathname === '/avatar') { proxyAvatar(url.searchParams.get('u') || '', res); return; }
+  if (url.pathname === '/tts') { handleTts(url, res); return; }
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ ok: true, sessions: [...sessions.values()].map((x) => ({ user: x.user, mode: x.mode, clients: x.clients.size })) }));
@@ -501,4 +527,5 @@ server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   else console.log(`Default TikTok account (config.json): @${username} - connects when the game page opens.`);
   console.log(SIGN_KEY ? 'TikTok sign key: set (SIGN_API_KEY).' : 'TikTok sign key: not set. If room lookup is blocked, add SIGN_API_KEY from https://www.eulerstream.com');
   if (config.openBrowser !== false && !process.env.NO_BROWSER && !process.env.RENDER) openBrowser(url);
+  warmReferee().catch((e) => console.log('Referee warmup failed:', e && e.message ? e.message : e));
 });

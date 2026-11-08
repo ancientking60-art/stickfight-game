@@ -9,7 +9,7 @@
     "followHp": 100,
     "giftMultiplier": 2,
     "maxFighters": 14,
-    "fighterSize": 0.66,
+    "fighterSize": 1.32,
     "damage": 1,
     "suddenDeathDamage": 2,
     "slowMotion": true,
