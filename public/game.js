@@ -1,5 +1,5 @@
 /* STICK FIGHT - free-for-all stickman pit for TikTok LIVE.
-   Like drops your fighter in at 50 HP (once). Follow is 100 HP. Gifts add 50 HP per coin.
+   A like or a comment drops you in at 50 HP (once). Follow is 100 HP. Gifts add 50 HP per coin.
    Events come from server.js over WebSocket (or the test buttons). */
 'use strict';
 
@@ -131,11 +131,6 @@ function formatHp(n) {
   }
   const m = n / 1e6;
   return (m >= 100 ? String(Math.round(m)) : String(Math.round(m * 10) / 10).replace(/\.0$/, '')) + 'm';
-}
-function formatMul(d) {
-  if (d >= 100) return 'x' + Math.round(d);
-  if (d >= 10) return 'x' + d.toFixed(1);
-  return 'x' + d.toFixed(2);
 }
 const lerp = (a, b, t) => a + (b - a) * t;
 const PI = Math.PI, TAU = Math.PI * 2;
@@ -850,6 +845,7 @@ class Fighter {
     this.tr = {}; for (const k of TRAIL_KEYS) this.tr[k] = [];
     this.alive = true; this.walkPh = rand(0, 6); this.lastStep = 0; this.walkV = 0; this.aim = 0;
     this.dropIn = !!o.dropIn; this.scripted = false; this.held = false; this.lastTouch = 0;
+    this.joinShield = false; this.shieldGround = -1;
     this.vo = { x: 0, y: 0 }; this.prevMode = null; this.prevHip = null;
     this.brain = new Brain(this);
     this.computeJoints();
@@ -874,7 +870,7 @@ class Fighter {
   isGun() { return this.weapon === 'pistol' || this.weapon === 'rifle'; }
   cy() { return this.y - 95 * this.s; }
   speed() { return (this.superT > 0 ? 1.3 : 1) * (teams[this.team].rageT > 0 ? 1.15 : 1) * (this.giant ? 0.85 : 1); }
-  dmgMul() { return (this.superT > 0 ? 1.35 : 1) * (teams[this.team] && teams[this.team].rageT > 0 ? 1.25 : 1) * (this.giant ? 1.8 : 1) * (this.giftDmg || 1); }
+  dmgMul() { return (this.superT > 0 ? 1.35 : 1) * (teams[this.team] && teams[this.team].rageT > 0 ? 1.25 : 1) * (this.giant ? 1.8 : 1); }
   sound(kind, v = 1) { sfx(kind, this.x, v, kind.startsWith('kiai') || kind === 'grunt' ? TEAMS[this.team].voice : 1); }
   busy() { const m = this.mv; return !!m && !m.d.foot; }
   play(name, o = {}) {
@@ -901,6 +897,9 @@ class Fighter {
     const T = this;
     T.auraT -= dt; if ((T.auraT > 0 || T.superT > 0) && Math.random() < dt * 35) ember(T);
     T.invuln -= dt; T.flash -= dt; T.comboT -= dt; T.superT -= dt; T.dropT -= dt; T.comboPop -= dt; T.wallT -= dt;
+    // A mid-fight joiner stays untouchable until they have had 3 seconds on the ground.
+    if (T.joinShield && T.shieldGround >= JOIN_SHIELD) { T.joinShield = false; T.invuln = 0; }
+    else if (T.joinShield) T.invuln = Math.max(T.invuln, 0.35);
     if (T.comboT <= 0) T.combo = 0;
     if (Math.abs(T.s - T.ts) > 0.005) T.s = lerp(T.s, T.ts, Math.min(1, dt * 4));
     if (T.giantT > 0) { T.giantT -= dt; if (T.giantT <= 0) { T.ts = BASE_S; floatText(T.x, T.y - 200 * T.s, 'GIANT MODE OVER', '#aab', 22); } }
@@ -922,6 +921,14 @@ class Fighter {
       }
       if (T.y >= FLOOR) { T.y = FLOOR; T.vy = 0; T.onGround = true; }
       if (T.onGround && !was) T.landed(vyPre);
+      if (T.joinShield && T.onGround) {
+        if (T.shieldGround < 0) {
+          T.shieldGround = 0;
+          ring(T.x, T.y - 30, 130 * T.s, '#b8ffd4', 0.75, 8);
+          floatText(T.x, T.y - 310 * T.s, 'SHIELD', '#7dffb0', 30, 1.2);
+        }
+        T.shieldGround += dt;
+      }
       const m = 16 * T.s + 6;
       if (T.x < WALL_L + m || T.x > WALL_R - m) {
         const side = T.x < W / 2 ? -1 : 1;
@@ -992,13 +999,20 @@ class Fighter {
   }
   tryHit(h) {
     const T = this, e = T.foe;
-    if (!e || !e.alive || e.invuln > 0 || e.held) return false;
+    if (!e || !e.alive || e.held) return false;
     const dxw = (e.x - T.x) * T.face;
     const reach = h.reach * T.s + 14 * e.s;
     if (dxw < -20 * T.s || dxw > reach) return false;
     const lp = T.J[h.limb] || T.J.hF;
     if (h.h === 'any') { if (Math.abs(e.cy() - T.cy()) > 175 * Math.max(T.s, e.s)) return false; }
     else if (lp.y < e.y - 215 * e.s || lp.y > e.y + 12) return false;
+    if (e.invuln > 0) {
+      if (e.joinShield) {
+        ring(e.x, e.cy(), 100, '#b8ffd4', 0.4, 6);
+        floatText(e.x, e.y - 250 * e.s, 'SAFE', '#7dffb0', 26, 0.5);
+      }
+      return false;
+    }
     resolveHit(T, e, h, lp);
     return true;
   }
@@ -1149,7 +1163,7 @@ function resolveHit(A, D, h, lp) {
   return 'hit';
 }
 function dealDamage(A, D, h, px, py, o = {}) {
-  if (!D.alive) return;
+  if (!D.alive || D.invuln > 0) return;
   const dir = o.dir ?? (A ? A.face : 1);
   const dmg = Math.max(1, Math.round(h.dmg * (A ? A.dmgMul() : 1) * DMG_SCALE * dmgMods(D)));
   D.hp -= dmg; D.flash = 0.08;
@@ -2114,7 +2128,7 @@ function heroOf(team) { const h = heroes[team]; return h && h.alive ? h : null; 
 function aliveCount() { return fighters.reduce((n, f) => n + (f.alive ? 1 : 0), 0); }
 function pid(ev) { return String((ev && (ev.id || ev.nick)) || 'viewer'); }
 function totalHp(p) { return (p.baseHp || 0) + (p.bonusHp || 0); }
-function giftDmgOf(p) { return 1 + (p.bonusHp || 0) / 200; }
+function giftDmgOf() { return 1; }
 function anyFighter() {
   const live = fighters.filter((f) => f.alive);
   return live.length ? live[Math.floor(Math.random() * live.length)] : null;
@@ -2161,6 +2175,33 @@ function gapX() {
   }
   return clamp(best, 120, W - 120);
 }
+// Land, then this many seconds of protection. Hits do not land during it.
+const JOIN_SHIELD = 3;
+function liveDrop() { return round.state === 'fight' || round.state === 'countdown'; }
+function armJoinShield(f) {
+  f.joinShield = true;
+  f.shieldGround = -1;
+  f.invuln = 99;
+}
+// Left or right edge, whichever has more room. Stays about 160px inside the wall.
+function safeEdgeX() {
+  const alive = fighters.filter((f) => f.alive);
+  const left = WALL_L + 160, right = WALL_R - 160;
+  if (!alive.length) return left;
+  const nearest = (x) => alive.reduce((d, f) => Math.min(d, Math.abs(f.x - x)), 1e9);
+  const ld = nearest(left), rd = nearest(right);
+  if (Math.abs(ld - rd) < 12) {
+    const lc = alive.filter((f) => f.x < W / 2).length;
+    return lc <= alive.length - lc ? left : right;
+  }
+  return ld >= rd ? left : right;
+}
+function spawnDrop(p, announce) {
+  const live = liveDrop();
+  const f = spawnBody(p, live ? safeEdgeX() : gapX(), announce, live ? 99 : 2.8);
+  if (f && live) armJoinShield(f);
+  return f;
+}
 function spawnBody(p, x, announce, invuln) {
   waitQ = waitQ.filter((q) => q !== p);
   const f = new Fighter(p.color, {
@@ -2197,7 +2238,7 @@ function dropOrQueue(p, announce) {
   if (p.fighter && p.fighter.alive) return p.fighter;
   if (round.state !== 'end' && aliveCount() < pitMax()) {
     p.eliminated = false;
-    const f = spawnBody(p, gapX(), announce, round.state === 'fight' ? 0.75 : 2.8);
+    const f = spawnDrop(p, announce);
     if (f) refereeSay(p.nick + ' drops in!');
     return f;
   }
@@ -2215,7 +2256,7 @@ function tryDropQueued() {
     p.queued = false;
     if (!p || (p.fighter && p.fighter.alive)) continue;
     p.eliminated = false;
-    const f = spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.45 : 2.8);
+    const f = spawnDrop(p, totalHp(p) + ' HP');
     if (f) {
       addFeed([[p.nick, (TEAMS[p.color] && TEAMS[p.color].ui) || '#fff'], [' joins from the queue', '#7dffb0']]);
       refereeSay(p.nick + ' drops in!');
@@ -2308,7 +2349,7 @@ function updateRound(dt) {
     }
     if (round.t >= 2.5) {
       round.state = 'fight'; round.t = 0; round.startedWith = Math.max(2, aliveCount());
-      for (const f of fighters) if (f.alive) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
+      for (const f of fighters) if (f.alive && !f.joinShield) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
       callout('FIGHT!', '', '#ff4545', 170, 0.9);
       sfx('go'); sfx('crowd'); shake(10);
       talkAt = clock + 2.6;
@@ -2325,18 +2366,13 @@ function updateRound(dt) {
     const limit = G_().roundSeconds || 90;
     if (!round.sudden && round.time > limit) {
       round.sudden = true; round.sdT = 0;
-      callout('SUDDEN DEATH!', 'HP IS DROPPING', '#ff4545', 120, 1.6);
+      callout('SUDDEN DEATH!', 'HITS HIT HARDER', '#ff4545', 120, 1.6);
       sfx('sudden'); shake(12);
     }
-    if (round.sudden) {
-      round.sdT += dt;
-      if (round.sdT > 8) {
-        for (const f of fighters) if (f.alive && f.hp > 0) {
-          f.hp -= Math.max(8, f.maxHp * 0.045) * dt;
-          if (f.hp <= 0) { f.hp = 0.2; dealDamage(null, f, { dmg: 2, type: 'blast', kx: 480, ky: -560 }, f.x, f.cy(), { dir: -f.face }); }
-        }
-      }
-    }
+    // Sudden death only makes landed hits hurt more (suddenDeathDamage). It used to
+    // also drain maxHp * 4.5% every second with no punch, so a big gift melted while
+    // the fighter was just standing there.
+    if (round.sudden) round.sdT += dt;
     return;
   }
   if (round.state === 'end' && round.t > 6.6) openNextRound();
@@ -2354,6 +2390,38 @@ function bringBack(p, announce) {
   const back = dropOrQueue(p, announce, true);
   maybeStart();
   return back;
+}
+function onComment(ev) {
+  const id = pid(ev);
+  let p = roster.get(id);
+  if (p) {
+    rememberNick(p, ev);
+    if (p.fighter && p.fighter.alive) {
+      addFeed([[p.nick, TEAMS[p.color].ui], [' already in the fight', '#c9d6ff']]);
+      return;
+    }
+    if (p.queued) {
+      addFeed([[p.nick, TEAMS[p.color].ui], [' already waiting #' + queuePlace(p), '#ffd84a']]);
+      return;
+    }
+    const hp = totalHp(p);
+    const back = dropOrQueue(p, 'COMMENT');
+    if (back) addFeed([[p.nick, TEAMS[p.color].ui], [' commented in — ' + hp + ' HP', '#c9d6ff']]);
+    else if (p.queued) addFeed([[p.nick, TEAMS[p.color].ui], [' commented — waiting ' + waitQ.length + '/' + WAIT_MAX, '#ffd84a']]);
+    maybeStart();
+    return;
+  }
+  if (aliveCount() >= pitMax() && waitQ.length >= WAIT_MAX) {
+    addFeed([[String(ev.nick || 'someone').slice(0, 18), '#c9d6ff'], [' cannot join — line is full', '#ff8080']]);
+    return;
+  }
+  p = makePlayer(ev, LIKE_HP());
+  roster.set(id, p);
+  applyAvatar(p, ev);
+  const joined = dropOrQueue(p, 'COMMENT');
+  if (joined) addFeed([[p.nick, TEAMS[p.color].ui], [' commented in — ' + p.baseHp + ' HP', '#c9d6ff']]);
+  else if (p.queued) addFeed([[p.nick, TEAMS[p.color].ui], [' commented — waiting ' + waitQ.length + '/' + WAIT_MAX, '#ffd84a']]);
+  maybeStart();
 }
 function onLike(ev) {
   const id = pid(ev);
@@ -2444,18 +2512,16 @@ function onGift(ev) {
   } else { rememberNick(p, ev); if (p.eliminated && (p.queued || aliveCount() < pitMax() || waitQ.length < WAIT_MAX)) p.eliminated = false; }
   p.bonusHp += reward;
   p.coins += coins * count;
-  const dmg = giftDmgOf(p);
   const label = (ev.giftName || 'Gift') + (count > 1 ? ' x' + count : '');
   const f = p.fighter && p.fighter.alive ? p.fighter : null;
   if (f) {
-    f.maxHp += reward; f.hp += reward; f.giftDmg = dmg; f.name = p.nick;
+    f.maxHp += reward; f.hp += reward; f.giftDmg = 1; f.name = p.nick;
     f.auraT = Math.max(f.auraT, reward >= 40 ? 3.2 : 1.5);
     healFx(f); ring(f.x, f.cy(), reward >= 40 ? 140 : 80, '#ffd84a', 0.45, 6);
     const hpLabel = '+' + formatHp(reward) + ' HP';
     floatText(f.x, f.y - 240 * f.s, hpLabel, '#4dff88', hpLabel.length > 10 ? 30 : 40, 1.4);
-    if (dmg >= 1.15) floatText(f.x + 10, f.y - 300 * f.s, formatMul(dmg) + ' DMG', '#ffd84a', 30, 1.35);
     sfx('powerup', f.x, reward >= 40 ? 1 : 0.6);
-    if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' POWER', '#ffd84a', 92, 1.5);
+    if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' HP', '#ffd84a', 92, 1.5);
   } else if (round.state !== 'end') {
     const hadSeat = p.queued;
     const spawned = dropOrQueue(p, '+' + formatHp(reward));
@@ -2465,20 +2531,36 @@ function onGift(ev) {
       return;
     }
     if (spawned) {
-      spawned.giftDmg = dmg; spawned.auraT = Math.max(spawned.auraT, 2.4);
-      if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' POWER', '#ffd84a', 92, 1.5);
+      spawned.giftDmg = 1; spawned.auraT = Math.max(spawned.auraT, 2.4);
+      if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' HP', '#ffd84a', 92, 1.5);
     }
     maybeStart();
   }
-  addFeed([[p.nick, TEAMS[p.color].ui], [' ' + label + ' → +' + formatHp(reward) + ' HP', '#4dff88'], [dmg >= 1.15 ? '  ' + formatMul(dmg) : '', '#ffd84a']]);
+  addFeed([[p.nick, TEAMS[p.color].ui], [' ' + label + ' → +' + formatHp(reward) + ' HP', '#4dff88']]);
   if (reward >= 100) refereeSay('Big gift from ' + p.nick + '!');
 }
 const evQ = [];
+// A heart from someone already fighting can be dropped. A first join, a bring-back, a follow, or a gift cannot.
+function joinWorth(ev) {
+  const t = ev && ev.type;
+  if (t !== 'like' && t !== 'chat' && t !== 'comment' && t !== 'follow' && t !== 'gift') return false;
+  const p = roster.get(pid(ev));
+  if (!p || t === 'gift' || t === 'follow') return true;
+  if (p.fighter && p.fighter.alive) return false;
+  return !p.queued;
+}
 function onEvent(ev) {
   if (!ev || !ev.type) return;
   if (ev.type === 'status' || ev.type === 'viewers') { dispatchEvent(ev); return; }
-  evQ.push(ev);
-  if (evQ.length > 480) evQ.splice(0, evQ.length - 480);
+  if (joinWorth(ev)) {
+    let i = 0;
+    while (i < evQ.length && joinWorth(evQ[i])) i++;
+    evQ.splice(i, 0, ev);
+  } else evQ.push(ev);
+  if (evQ.length > 480) {
+    for (let i = evQ.length - 1; i >= 0 && evQ.length > 480; i--) if (!joinWorth(evQ[i])) evQ.splice(i, 1);
+    if (evQ.length > 480) evQ.splice(0, evQ.length - 480);
+  }
 }
 function drainEvents() {
   const n = Math.min(evQ.length, 12);
@@ -2491,7 +2573,7 @@ function dispatchEvent(ev) {
   if (!ev || !ev.type) return;
   switch (ev.type) {
     case 'status': if (ev.mode === 'live' && S.live.mode !== 'live') S.liveAt = performance.now(); S.live = ev; updateLiveInfo(); break;
-    case 'chat': break;
+    case 'chat': case 'comment': onComment(ev); break;
     case 'join': break;
     case 'gift': onGift(ev); break;
     case 'like': onLike(ev); break;
@@ -3128,6 +3210,21 @@ function drawFighter(f) {
     ctx.globalAlpha = 1;
   }
   drawBody(J, f.team, s, f.flash > 0, blink ? 0.7 : 1);
+  if (f.joinShield && J.hip && J.head) {
+    const cy = (J.head.y + J.hip.y) * 0.5;
+    const pulse = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(clock * 7));
+    ctx.save();
+    ctx.globalAlpha = pulse * 0.28;
+    ctx.fillStyle = '#b8ffd4';
+    ctx.beginPath();
+    ctx.ellipse(J.hip.x, cy, 58 * s, 108 * s, 0, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = Math.min(1, pulse + 0.25);
+    ctx.strokeStyle = '#eafff4';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.restore();
+  }
   drawWeapon(f);
   drawEyes(f);
   if (!lying) { drawFace(f); if (ta > 0.01 || f.talk) drawMouth(f, ta); }
@@ -3712,13 +3809,13 @@ function drawWorldUI() {
     p.y = clamp(p.y, VIEW_TOP + 28, VIEW_BOT - 20); tags.push([f, p]);
   }
   tags.sort((a, b) => a[1].x - b[1].x || a[1].y - b[1].y);
-  if (tags.length > 8) {
+  if (tags.length >= 5) {
     // One row cannot hold this many names. Stagger them so each plate has its own slot.
     const rows = tags.length > 16 ? 3 : 2;
     for (let i = 0; i < tags.length; i++) tags[i][1].row = i % rows;
     for (let row = 0; row < rows; row++) {
       const group = tags.filter((t) => t[1].row === row);
-      const gap = 168;
+      const gap = tags.length > 16 ? 128 : tags.length > 8 ? 168 : 240;
       for (let i = 1; i < group.length; i++) {
         const A = group[i - 1][1], B = group[i][1];
         if (B.x < A.x + gap) B.x = A.x + gap;
@@ -3730,7 +3827,7 @@ function drawWorldUI() {
         const origin = 70 + (avail - span * scale) / 2;
         for (const [, p] of group) {
           p.x = origin + (p.x - first) * scale;
-          p.y = 560 + row * 52;
+          p.y = (tags.length > 8 ? 520 : 500) + row * (tags.length > 8 ? 52 : 74);
         }
       }
     }
@@ -3752,11 +3849,11 @@ function drawWorldUI() {
     ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(p.x - bw / 2 - 2, p.y - 16, bw + 4, 16);
     ctx.fillStyle = hp > 0.5 ? '#3dff7a' : hp > 0.25 ? '#ffd23f' : '#ff4040'; ctx.fillRect(p.x - bw / 2, p.y - 14, Math.max(4, bw * hp), 12);
     const nm = nAlive > 16 ? String(f.name).slice(0, 8) : nAlive > 8 ? String(f.name).slice(0, 10) : shortNick(f.name);
-    const mult = f.giftDmg > 1.12 ? ' ' + formatMul(f.giftDmg) : '';
-    const label = nm + ' ' + formatHp(f.hp) + mult;
-    let fs = Math.round((nAlive > 14 ? 20 : nAlive > 8 ? 22 : 26) * zk);
+    const label = nm + ' ' + formatHp(f.hp);
+    let fs = Math.round((nAlive > 14 ? 20 : nAlive > 8 ? 22 : 24) * zk);
     ctx.font = `${fs}px Russo, Arial, sans-serif`;
-    while (fs > 16 && ctx.measureText(label).width > 230) { fs -= 1; ctx.font = `${fs}px Russo, Arial, sans-serif`; }
+    const maxLabel = nAlive > 16 ? 108 : nAlive > 8 ? 150 : nAlive >= 5 ? 200 : 230;
+    while (fs > 15 && ctx.measureText(label).width > maxLabel) { fs -= 1; ctx.font = `${fs}px Russo, Arial, sans-serif`; }
     const tw = ctx.measureText(label).width + 24, ty = p.y - 24;
     ctx.globalAlpha = 0.95; ctx.fillStyle = t.panel; roundRect(p.x - tw / 2, ty - fs - 3, tw, fs + 9, 8); ctx.fill();
     ctx.strokeStyle = t.ui; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = t.text; ctx.fillText(label, p.x, ty); ctx.globalAlpha = 1;
@@ -3940,7 +4037,7 @@ function drawHUD() {
   while (ifs > 16 && ctx.measureText(info).width > 1020) { ifs -= 1; ctx.font = ifs + 'px Russo, Arial, sans-serif'; }
   outlined(info, W / 2, 112, ifs + 'px Russo, Arial, sans-serif', fullLine ? '#ffb15a' : (phase === 'SUDDEN DEATH' ? '#ff6060' : '#d5def8'), '#000', 5);
   const likeHp = LIKE_HP(), followHp = FOLLOW_HP(), mul = GIFT_X();
-  const legend = 'LIKE = JOIN ' + likeHp + ' HP    ·    FOLLOW = ' + followHp + ' HP    ·    GIFT = ' + mul + ' HP / COIN';
+  const legend = 'LIKE / COMMENT = ' + likeHp + ' HP    ·    FOLLOW = ' + followHp + ' HP    ·    GIFT = ' + mul + ' / COIN';
   let lfs = 30; ctx.font = lfs + 'px Russo, Arial, sans-serif';
   while (lfs > 18 && ctx.measureText(legend).width > 1000) { lfs -= 1; ctx.font = lfs + 'px Russo, Arial, sans-serif'; }
   const lw = ctx.measureText(legend).width + 48;
@@ -3961,8 +4058,8 @@ function drawHUD() {
   ctx.globalAlpha = 1;
 
   if (round.state === 'lobby' && alive < 2) {
-    outlined(alive === 0 ? 'LIKE TO DROP IN' : 'NEED ONE MORE FIGHTER', W / 2, 860, '78px Bangers, Impact, sans-serif', '#ffffff', '#1340a8', 10);
-    outlined('Like joins at ' + likeHp + ' HP. Follow is ' + followHp + '. Gifts are ' + mul + ' HP per coin.', W / 2, 930, '28px Russo, Arial, sans-serif', '#ffd84a', '#000', 5);
+    outlined(alive === 0 ? 'COMMENT OR LIKE TO JOIN' : 'NEED ONE MORE FIGHTER', W / 2, 860, '64px Bangers, Impact, sans-serif', '#ffffff', '#1340a8', 10);
+    outlined('Comment or like joins at ' + likeHp + ' HP. Follow is ' + followHp + '. Gifts are ' + mul + ' HP per coin.', W / 2, 930, '26px Russo, Arial, sans-serif', '#ffd84a', '#000', 5);
   }
   if (round.state === 'countdown') {
     const n = Math.max(1, 3 - Math.floor(round.t / 0.8)), fr = (round.t % 0.8) / 0.8;
@@ -4344,6 +4441,8 @@ function simTarget() {
   const u = newFake(); sim.last = u; return u;
 }
 function simLikeNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'like', ...u, count: 1 }); return u; }
+function simCommentNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'chat', ...u, text: 'join' }); return u; }
+function simCommentAgain() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'chat', id: u.id, nick: u.nick, avatar: u.avatar, text: 'again' }); return u; }
 function simLikeAgain() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'like', id: u.id, nick: u.nick, avatar: u.avatar, count: 1 }); return u; }
 function simFollowNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'follow', ...u }); return u; }
 function simFollowLast() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'follow', id: u.id, nick: u.nick, avatar: u.avatar }); return u; }
@@ -4396,6 +4495,8 @@ function setupPanel() {
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   const likeBtn = () => simLikeNew();
   const likeAgainBtn = () => simLikeAgain();
+  const commentBtn = () => simCommentNew();
+  const commentAgainBtn = () => simCommentAgain();
   const followBtn = () => simFollowNew();
   const followLastBtn = () => simFollowLast();
   const autoBtn = () => { sim.auto = !sim.auto; const b = document.getElementById('autoBtn'); if (b) b.classList.toggle('on', sim.auto); };
@@ -4403,6 +4504,8 @@ function setupPanel() {
   const newRound = () => openNextRound();
   bind('likeBtn', likeBtn);
   bind('likeAgainBtn', likeAgainBtn);
+  bind('commentBtn', commentBtn);
+  bind('commentAgainBtn', commentAgainBtn);
   bind('followBtn', followBtn);
   bind('followLastBtn', followLastBtn);
   bind('autoBtn', autoBtn);
@@ -4418,6 +4521,8 @@ function setupPanel() {
     if (e.code === 'KeyH') panel.classList.toggle('hidden');
     else if (e.code === 'KeyL') likeBtn();
     else if (e.code === 'KeyK') likeAgainBtn();
+    else if (e.code === 'KeyC') commentBtn();
+    else if (e.code === 'KeyV') commentAgainBtn();
     else if (e.code === 'KeyF') followBtn();
     else if (e.code === 'KeyG') followLastBtn();
     else if (e.code === 'KeyA') autoBtn();
@@ -4634,13 +4739,27 @@ async function boot() {
   safe('round', startRound);
   window.SF = {
     step: (n = 1, fps = 30) => { for (let i = 0; i < n; i++) tick(1 / fps); render(); },
-    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simFollowNew, showTalk, talk, pitMax, waitMax: () => WAIT_MAX, placeholderAvatar,
+    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simCommentNew, simCommentAgain, simFollowNew, showTalk, talk, pitMax, waitMax: () => WAIT_MAX, placeholderAvatar,
     knockOut: (name) => {
       const f = fighters.find((x) => x.alive && (!name || x.name === name || x.viewerId === name));
       if (!f) return null;
       const next = waitQ[0] ? waitQ[0].nick : '';
       dealDamage(null, f, { dmg: Math.ceil(f.hp) + 40, type: 'heavy', kx: 280, ky: -420 }, f.x, f.cy(), { dir: 1 });
       return { out: f.name, next, alive: aliveCount(), waiting: waitQ.length, now: waitQ.map((q) => q.nick) };
+    },
+    // Same landed cross both ways, so a demo can show a gifter hits exactly like a 50 HP fighter.
+    poke: (name, target) => {
+      const A = fighters.find((x) => x.alive && (x.name === name || x.viewerId === name));
+      const D = A && fighters.find((x) => x.alive && x !== A && (!target || x.name === target || x.viewerId === target));
+      if (!A || !D) return null;
+      const before = Math.round(D.hp);
+      D.invuln = 0; A.invuln = 0;
+      A.face = D.x >= A.x ? 1 : -1;
+      A.play('cross', { keepFace: true, noHit: true });
+      if (A.mv) A.mv.t = 0.13;
+      const hit = MV.cross.hits[0];
+      dealDamage(A, D, hit, D.x, D.cy(), { dir: A.face, noReact: true });
+      return { attacker: A.name, defender: D.name, before, after: Math.round(D.hp), dealt: before - Math.round(D.hp), base: hit.dmg, mul: +A.dmgMul().toFixed(3), sudden: !!round.sudden };
     },
     state: () => ({
       round: round.state, n: round.n, winner: round.winnerF && round.winnerF.name,

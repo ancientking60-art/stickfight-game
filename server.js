@@ -419,6 +419,7 @@ class Session {
     const B = (m) => { if (this.conn === conn) this.broadcast(m); };
     const note = (type, extra = '') => console.log(`[${this.user}] event ${type}${extra ? ' ' + extra : ''}`);
 
+    // A comment joins the fight once at 50 HP, same identity as a like: uniqueId, nickname, profile photo.
     conn.on(WebcastEvent.CHAT, (d) => { sample(this.user, 'chat', d); const u = who(d); const text = String(d.content ?? d.comment ?? d.text ?? ''); note('chat', `${u.nick}: ${text.slice(0, 80)}`); B({ type: 'chat', ...u, text }); });
     conn.on(WebcastEvent.GIFT, (d) => {
       sample(this.user, 'gift', d);
@@ -564,7 +565,7 @@ server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log('==============================================');
   console.log('  STICK FIGHT is running!  (free-for-all)');
   console.log(`  Game:  ${url}`);
-  console.log('  Like = join 50 HP, Follow = 100 HP, Gift = 50 HP per coin.');
+  console.log('  Comment or like = join 50 HP, Follow = 100 HP, Gift = 50 HP per coin.');
   console.log('  Press H in the game to show/hide test buttons');
   console.log('  Keep this black window open while you stream.');
   console.log('==============================================');
