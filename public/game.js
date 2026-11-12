@@ -1206,6 +1206,7 @@ function wallBounce(T, side, vx) {
 function finisher(A, D, h, dir) {
   D.hp = 0; D.alive = false; D.mv = null;
   if (D.user) { D.user.eliminated = true; D.user.queued = false; waitQ = waitQ.filter((q) => q !== D.user); }
+  tryDropQueued();
   const others = fighters.filter((f) => f.alive).length;
   const finalBlow = others <= 1 && !waitQ.length;
   const rd = makeRagdoll(D, dir * Math.max(700, (h.kx || 500) * (finalBlow ? 1.25 : 0.85)), Math.min(h.ky || -400, -400) - (finalBlow ? 450 : 180));
@@ -2095,11 +2096,13 @@ const supporters = roster;   // older debug hooks read this map
 let waitQ = [];
 let pitRotate = 0;
 // Hard cap on stickmen drawn at once. 24 fits a busy LIVE and stays smooth.
-// config.json game.maxFighters can move it between 8 and 40. Anyone past the cap waits.
+// config.json game.maxFighters can move it between 8 and 40.
 function pitMax() {
   const n = Math.round(Number(G_().maxFighters));
   return clamp(Number.isFinite(n) && n > 0 ? n : 24, 8, 40);
 }
+// Extra seats behind the pit. These people are not drawn. First in, first out.
+const WAIT_MAX = 80;
 const round = { n: 0, state: 'lobby', t: 0, time: 0, winner: -1, winnerF: null, mvp: null, sudden: false, sdT: 0, beeps: 0, mur: -1, bowed: false, startedWith: 0, bantered: false };
 const heroes = [null, null];
 const G_ = () => S.game;
@@ -2174,31 +2177,49 @@ function spawnBody(p, x, announce, invuln) {
   sfx('heal', x, 0.4);
   return f;
 }
-function enqueue(p, front) {
-  waitQ = waitQ.filter((q) => q !== p);
-  p.queued = true;
-  if (front) waitQ.unshift(p); else waitQ.push(p);
+function queuePlace(p) {
+  const i = waitQ.indexOf(p);
+  return i < 0 ? 0 : i + 1;
 }
-function dropOrQueue(p, announce, front) {
-  if (round.state === 'end') { enqueue(p, front); return null; }
+// FIFO. Someone already waiting keeps their place. A full line refuses the new person.
+function enqueue(p) {
+  if (waitQ.indexOf(p) >= 0) { p.queued = true; return 'already'; }
+  if (waitQ.length >= WAIT_MAX) return 'full';
+  waitQ.push(p);
+  p.queued = true;
+  p.eliminated = false;
+  return 'queued';
+}
+function refuseQueue(p) {
+  addFeed([[p.nick, (TEAMS[p.color] && TEAMS[p.color].ui) || '#fff'], [' cannot join — 24 fighting and ' + WAIT_MAX + ' waiting are full', '#ff8080']]);
+}
+function dropOrQueue(p, announce) {
   if (p.fighter && p.fighter.alive) return p.fighter;
-  if (aliveCount() >= pitMax()) {
-    enqueue(p, front);
-    addFeed([[p.nick, TEAMS[p.color].ui], [' is in — drops when a spot opens', '#ffd84a']]);
-    return null;
+  if (round.state !== 'end' && aliveCount() < pitMax()) {
+    p.eliminated = false;
+    const f = spawnBody(p, gapX(), announce, round.state === 'fight' ? 0.75 : 2.8);
+    if (f) refereeSay(p.nick + ' drops in!');
+    return f;
   }
-  const f = spawnBody(p, gapX(), announce, round.state === 'fight' ? 0.75 : 2.8);
-  if (f) refereeSay(p.nick + ' drops in!');
-  return f;
+  const spot = enqueue(p);
+  if (spot === 'queued') addFeed([[p.nick, (TEAMS[p.color] && TEAMS[p.color].ui) || '#fff'], [' waiting ' + waitQ.length + '/' + WAIT_MAX, '#ffd84a']]);
+  else if (spot === 'full') refuseQueue(p);
+  return null;
 }
 function tryDropQueued() {
   if (round.state === 'end') return;
-  while (aliveCount() < pitMax() && waitQ.length) {
+  // One cheap spawn per open seat. Waiters are not fighters until this runs.
+  let guard = pitMax();
+  while (guard-- > 0 && aliveCount() < pitMax() && waitQ.length) {
     const p = waitQ.shift();
     p.queued = false;
-    if (p.eliminated || (p.fighter && p.fighter.alive)) continue;
-    const f = spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.75 : 2.8);
-    if (f) refereeSay(p.nick + ' drops in!');
+    if (!p || (p.fighter && p.fighter.alive)) continue;
+    p.eliminated = false;
+    const f = spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.45 : 2.8);
+    if (f) {
+      addFeed([[p.nick, (TEAMS[p.color] && TEAMS[p.color].ui) || '#fff'], [' joins from the queue', '#7dffb0']]);
+      refereeSay(p.nick + ' drops in!');
+    }
   }
 }
 function spawnRoster() {
@@ -2223,7 +2244,7 @@ function spawnRoster() {
   for (let i = 0; i < order.length; i++) {
     const p = order[i];
     if (i < n) spawnBody(p, layoutX(i, n), totalHp(p) + ' HP', 2.8);
-    else enqueue(p, false);
+    else if (waitQ.length < WAIT_MAX) enqueue(p);
   }
   refitScale();
 }
@@ -2340,12 +2361,16 @@ function onLike(ev) {
   if (p) {
     rememberNick(p, ev);
     if (p.fighter && p.fighter.alive) { floatText(p.fighter.x, p.fighter.y - 210 * p.fighter.s, '♥', '#ff7ab0', 28, 0.55); return; }
-    if (p.eliminated) {
-      addFeed([[p.nick, TEAMS[p.color].ui], [' liked back in', '#ff9cc4']]);
-      bringBack(p, totalHp(p) + ' HP');
+    if (p.queued) {
+      addFeed([[p.nick, TEAMS[p.color].ui], [' already waiting #' + queuePlace(p), '#ffd84a']]);
       return;
     }
-    addFeed([[p.nick, TEAMS[p.color].ui], [' already in the pit', '#ff9cc4']]);
+    const back = bringBack(p, totalHp(p) + ' HP');
+    if (back) addFeed([[p.nick, TEAMS[p.color].ui], [' liked back in', '#ff9cc4']]);
+    return;
+  }
+  if (aliveCount() >= pitMax() && waitQ.length >= WAIT_MAX) {
+    addFeed([[String(ev.nick || 'someone').slice(0, 18), '#ff9cc4'], [' cannot join — line is full', '#ff8080']]);
     return;
   }
   p = makePlayer(ev, LIKE_HP());
@@ -2379,6 +2404,10 @@ function onFollow(ev) {
   const id = pid(ev);
   let p = roster.get(id);
   if (!p) {
+    if (aliveCount() >= pitMax() && waitQ.length >= WAIT_MAX) {
+      addFeed([[String(ev.nick || 'someone').slice(0, 18), '#7fb2ff'], [' cannot join — line is full', '#ff8080']]);
+      return;
+    }
     p = makePlayer(ev, FOLLOW_HP());
     roster.set(id, p);
     applyAvatar(p, ev);
@@ -2392,8 +2421,8 @@ function onFollow(ev) {
   const out = p.eliminated || !(p.fighter && p.fighter.alive);
   grantFollow(p);
   if (out && !p.queued) {
-    addFeed([[p.nick, '#7fb2ff'], [' followed back in', '#7fb2ff']]);
-    bringBack(p, totalHp(p) + ' HP');
+    const back = bringBack(p, totalHp(p) + ' HP');
+    if (back) addFeed([[p.nick, '#7fb2ff'], [' followed back in', '#7fb2ff']]);
     return;
   }
   addFeed([[p.nick, '#7fb2ff'], [before < FOLLOW_HP() ? ' followed — HP raised to ' + FOLLOW_HP() : ' followed', '#7fb2ff']]);
@@ -2405,10 +2434,14 @@ function onGift(ev) {
   const id = pid(ev);
   let p = roster.get(id);
   if (!p) {
+    if (aliveCount() >= pitMax() && waitQ.length >= WAIT_MAX) {
+      addFeed([[String(ev.nick || 'someone').slice(0, 18), '#ffd84a'], [' gift missed — line is full', '#ff8080']]);
+      return;
+    }
     p = makePlayer(ev, LIKE_HP());
     roster.set(id, p);
     applyAvatar(p, ev);
-  } else { rememberNick(p, ev); if (p.eliminated) p.eliminated = false; }
+  } else { rememberNick(p, ev); if (p.eliminated && (p.queued || aliveCount() < pitMax() || waitQ.length < WAIT_MAX)) p.eliminated = false; }
   p.bonusHp += reward;
   p.coins += coins * count;
   const dmg = giftDmgOf(p);
@@ -2424,7 +2457,13 @@ function onGift(ev) {
     sfx('powerup', f.x, reward >= 40 ? 1 : 0.6);
     if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' POWER', '#ffd84a', 92, 1.5);
   } else if (round.state !== 'end') {
-    const spawned = dropOrQueue(p, '+' + formatHp(reward), true);
+    const hadSeat = p.queued;
+    const spawned = dropOrQueue(p, '+' + formatHp(reward));
+    if (!spawned && !p.queued && !hadSeat) {
+      p.bonusHp -= reward;
+      p.coins -= coins * count;
+      return;
+    }
     if (spawned) {
       spawned.giftDmg = dmg; spawned.auraT = Math.max(spawned.auraT, 2.4);
       if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' POWER', '#ffd84a', 92, 1.5);
@@ -3894,9 +3933,12 @@ function drawHUD() {
   while (tfs > 42 && ctx.measureText(title).width > 980) { tfs -= 4; ctx.font = tfs + 'px Bangers, Impact, sans-serif'; }
   outlined(title, W / 2, 74, tfs + 'px Bangers, Impact, sans-serif', '#ffffff', '#2f7bff', 14);
   const alive = aliveCount(), queued = waitQ.length;
-  const phase = round.state === 'lobby' ? 'WAITING' : round.state === 'countdown' ? 'GET READY' : round.state === 'end' ? 'WINNER' : round.sudden ? 'SUDDEN DEATH' : 'FIGHTING';
-  const info = (round.n > 0 ? 'ROUND ' + round.n + '   ·   ' : '') + phase + '   ·   ' + alive + ' IN' + (queued ? '   ·   waiting: ' + queued : '');
-  outlined(info, W / 2, 112, '28px Russo, Arial, sans-serif', phase === 'SUDDEN DEATH' ? '#ff6060' : '#d5def8', '#000', 5);
+  const phase = round.state === 'lobby' ? 'LOBBY' : round.state === 'countdown' ? 'GET READY' : round.state === 'end' ? 'WINNER' : round.sudden ? 'SUDDEN DEATH' : 'FIGHTING';
+  const fullLine = queued >= WAIT_MAX;
+  const info = (round.n > 0 ? 'ROUND ' + round.n + '   ·   ' : '') + alive + ' FIGHTING   ·   WAITING ' + queued + '/' + WAIT_MAX + (fullLine ? ' FULL' : '');
+  let ifs = 28; ctx.font = ifs + 'px Russo, Arial, sans-serif';
+  while (ifs > 16 && ctx.measureText(info).width > 1020) { ifs -= 1; ctx.font = ifs + 'px Russo, Arial, sans-serif'; }
+  outlined(info, W / 2, 112, ifs + 'px Russo, Arial, sans-serif', fullLine ? '#ffb15a' : (phase === 'SUDDEN DEATH' ? '#ff6060' : '#d5def8'), '#000', 5);
   const likeHp = LIKE_HP(), followHp = FOLLOW_HP(), mul = GIFT_X();
   const legend = 'LIKE = JOIN ' + likeHp + ' HP    ·    FOLLOW = ' + followHp + ' HP    ·    GIFT = ' + mul + ' HP / COIN';
   let lfs = 30; ctx.font = lfs + 'px Russo, Arial, sans-serif';
@@ -4592,11 +4634,19 @@ async function boot() {
   safe('round', startRound);
   window.SF = {
     step: (n = 1, fps = 30) => { for (let i = 0; i < n; i++) tick(1 / fps); render(); },
-    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simFollowNew, showTalk, talk, pitMax, placeholderAvatar,
+    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simFollowNew, showTalk, talk, pitMax, waitMax: () => WAIT_MAX, placeholderAvatar,
+    knockOut: (name) => {
+      const f = fighters.find((x) => x.alive && (!name || x.name === name || x.viewerId === name));
+      if (!f) return null;
+      const next = waitQ[0] ? waitQ[0].nick : '';
+      dealDamage(null, f, { dmg: Math.ceil(f.hp) + 40, type: 'heavy', kx: 280, ky: -420 }, f.x, f.cy(), { dir: 1 });
+      return { out: f.name, next, alive: aliveCount(), waiting: waitQ.length, now: waitQ.map((q) => q.nick) };
+    },
     state: () => ({
       round: round.state, n: round.n, winner: round.winnerF && round.winnerF.name,
       talk: talk.text, kind: talk.kind,
       fighters: fighters.filter((f) => f.alive).map((f) => ({ id: f.viewerId, name: f.name, hp: Math.round(f.hp), max: Math.round(f.maxHp), dmg: +((f.giftDmg || 1).toFixed(2)) })),
+      waiting: waitQ.length, waitMax: WAIT_MAX, wait: waitQ.map((q) => q.nick),
       roster: [...roster.values()].map((pl) => ({ id: pl.id, nick: pl.nick, base: pl.baseHp, bonus: pl.bonusHp, queued: !!pl.queued, eliminated: !!pl.eliminated })),
       ref: { q: REF.q.slice(), playing: REF.playing, blocked: REF.blocked }
     }),
