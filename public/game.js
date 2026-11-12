@@ -845,6 +845,7 @@ class Fighter {
     this.tr = {}; for (const k of TRAIL_KEYS) this.tr[k] = [];
     this.alive = true; this.walkPh = rand(0, 6); this.lastStep = 0; this.walkV = 0; this.aim = 0;
     this.dropIn = !!o.dropIn; this.scripted = false; this.held = false; this.lastTouch = 0;
+    this.joinShield = false; this.shieldGround = -1;
     this.vo = { x: 0, y: 0 }; this.prevMode = null; this.prevHip = null;
     this.brain = new Brain(this);
     this.computeJoints();
@@ -896,6 +897,9 @@ class Fighter {
     const T = this;
     T.auraT -= dt; if ((T.auraT > 0 || T.superT > 0) && Math.random() < dt * 35) ember(T);
     T.invuln -= dt; T.flash -= dt; T.comboT -= dt; T.superT -= dt; T.dropT -= dt; T.comboPop -= dt; T.wallT -= dt;
+    // A mid-fight joiner stays untouchable until they have had 3 seconds on the ground.
+    if (T.joinShield && T.shieldGround >= JOIN_SHIELD) { T.joinShield = false; T.invuln = 0; }
+    else if (T.joinShield) T.invuln = Math.max(T.invuln, 0.35);
     if (T.comboT <= 0) T.combo = 0;
     if (Math.abs(T.s - T.ts) > 0.005) T.s = lerp(T.s, T.ts, Math.min(1, dt * 4));
     if (T.giantT > 0) { T.giantT -= dt; if (T.giantT <= 0) { T.ts = BASE_S; floatText(T.x, T.y - 200 * T.s, 'GIANT MODE OVER', '#aab', 22); } }
@@ -917,6 +921,14 @@ class Fighter {
       }
       if (T.y >= FLOOR) { T.y = FLOOR; T.vy = 0; T.onGround = true; }
       if (T.onGround && !was) T.landed(vyPre);
+      if (T.joinShield && T.onGround) {
+        if (T.shieldGround < 0) {
+          T.shieldGround = 0;
+          ring(T.x, T.y - 30, 130 * T.s, '#b8ffd4', 0.75, 8);
+          floatText(T.x, T.y - 310 * T.s, 'SHIELD', '#7dffb0', 30, 1.2);
+        }
+        T.shieldGround += dt;
+      }
       const m = 16 * T.s + 6;
       if (T.x < WALL_L + m || T.x > WALL_R - m) {
         const side = T.x < W / 2 ? -1 : 1;
@@ -987,13 +999,20 @@ class Fighter {
   }
   tryHit(h) {
     const T = this, e = T.foe;
-    if (!e || !e.alive || e.invuln > 0 || e.held) return false;
+    if (!e || !e.alive || e.held) return false;
     const dxw = (e.x - T.x) * T.face;
     const reach = h.reach * T.s + 14 * e.s;
     if (dxw < -20 * T.s || dxw > reach) return false;
     const lp = T.J[h.limb] || T.J.hF;
     if (h.h === 'any') { if (Math.abs(e.cy() - T.cy()) > 175 * Math.max(T.s, e.s)) return false; }
     else if (lp.y < e.y - 215 * e.s || lp.y > e.y + 12) return false;
+    if (e.invuln > 0) {
+      if (e.joinShield) {
+        ring(e.x, e.cy(), 100, '#b8ffd4', 0.4, 6);
+        floatText(e.x, e.y - 250 * e.s, 'SAFE', '#7dffb0', 26, 0.5);
+      }
+      return false;
+    }
     resolveHit(T, e, h, lp);
     return true;
   }
@@ -1144,7 +1163,7 @@ function resolveHit(A, D, h, lp) {
   return 'hit';
 }
 function dealDamage(A, D, h, px, py, o = {}) {
-  if (!D.alive) return;
+  if (!D.alive || D.invuln > 0) return;
   const dir = o.dir ?? (A ? A.face : 1);
   const dmg = Math.max(1, Math.round(h.dmg * (A ? A.dmgMul() : 1) * DMG_SCALE * dmgMods(D)));
   D.hp -= dmg; D.flash = 0.08;
@@ -2156,6 +2175,33 @@ function gapX() {
   }
   return clamp(best, 120, W - 120);
 }
+// Land, then this many seconds of protection. Hits do not land during it.
+const JOIN_SHIELD = 3;
+function liveDrop() { return round.state === 'fight' || round.state === 'countdown'; }
+function armJoinShield(f) {
+  f.joinShield = true;
+  f.shieldGround = -1;
+  f.invuln = 99;
+}
+// Left or right edge, whichever has more room. Stays about 160px inside the wall.
+function safeEdgeX() {
+  const alive = fighters.filter((f) => f.alive);
+  const left = WALL_L + 160, right = WALL_R - 160;
+  if (!alive.length) return left;
+  const nearest = (x) => alive.reduce((d, f) => Math.min(d, Math.abs(f.x - x)), 1e9);
+  const ld = nearest(left), rd = nearest(right);
+  if (Math.abs(ld - rd) < 12) {
+    const lc = alive.filter((f) => f.x < W / 2).length;
+    return lc <= alive.length - lc ? left : right;
+  }
+  return ld >= rd ? left : right;
+}
+function spawnDrop(p, announce) {
+  const live = liveDrop();
+  const f = spawnBody(p, live ? safeEdgeX() : gapX(), announce, live ? 99 : 2.8);
+  if (f && live) armJoinShield(f);
+  return f;
+}
 function spawnBody(p, x, announce, invuln) {
   waitQ = waitQ.filter((q) => q !== p);
   const f = new Fighter(p.color, {
@@ -2192,7 +2238,7 @@ function dropOrQueue(p, announce) {
   if (p.fighter && p.fighter.alive) return p.fighter;
   if (round.state !== 'end' && aliveCount() < pitMax()) {
     p.eliminated = false;
-    const f = spawnBody(p, gapX(), announce, round.state === 'fight' ? 0.75 : 2.8);
+    const f = spawnDrop(p, announce);
     if (f) refereeSay(p.nick + ' drops in!');
     return f;
   }
@@ -2210,7 +2256,7 @@ function tryDropQueued() {
     p.queued = false;
     if (!p || (p.fighter && p.fighter.alive)) continue;
     p.eliminated = false;
-    const f = spawnBody(p, gapX(), totalHp(p) + ' HP', round.state === 'fight' ? 0.45 : 2.8);
+    const f = spawnDrop(p, totalHp(p) + ' HP');
     if (f) {
       addFeed([[p.nick, (TEAMS[p.color] && TEAMS[p.color].ui) || '#fff'], [' joins from the queue', '#7dffb0']]);
       refereeSay(p.nick + ' drops in!');
@@ -2303,7 +2349,7 @@ function updateRound(dt) {
     }
     if (round.t >= 2.5) {
       round.state = 'fight'; round.t = 0; round.startedWith = Math.max(2, aliveCount());
-      for (const f of fighters) if (f.alive) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
+      for (const f of fighters) if (f.alive && !f.joinShield) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
       callout('FIGHT!', '', '#ff4545', 170, 0.9);
       sfx('go'); sfx('crowd'); shake(10);
       talkAt = clock + 2.6;
@@ -3148,6 +3194,21 @@ function drawFighter(f) {
     ctx.globalAlpha = 1;
   }
   drawBody(J, f.team, s, f.flash > 0, blink ? 0.7 : 1);
+  if (f.joinShield && J.hip && J.head) {
+    const cy = (J.head.y + J.hip.y) * 0.5;
+    const pulse = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(clock * 7));
+    ctx.save();
+    ctx.globalAlpha = pulse * 0.28;
+    ctx.fillStyle = '#b8ffd4';
+    ctx.beginPath();
+    ctx.ellipse(J.hip.x, cy, 58 * s, 108 * s, 0, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = Math.min(1, pulse + 0.25);
+    ctx.strokeStyle = '#eafff4';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.restore();
+  }
   drawWeapon(f);
   drawEyes(f);
   if (!lying) { drawFace(f); if (ta > 0.01 || f.talk) drawMouth(f, ta); }
