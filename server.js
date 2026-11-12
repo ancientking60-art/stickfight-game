@@ -564,7 +564,7 @@ server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log('==============================================');
   console.log('  STICK FIGHT is running!  (free-for-all)');
   console.log(`  Game:  ${url}`);
-  console.log('  Like = join 50 HP, Follow = 100 HP, Gift = 2x coins.');
+  console.log('  Like = join 50 HP, Follow = 100 HP, Gift = 50 HP per coin.');
   console.log('  Press H in the game to show/hide test buttons');
   console.log('  Keep this black window open while you stream.');
   console.log('==============================================');
