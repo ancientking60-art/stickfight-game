@@ -1,5 +1,5 @@
 {
-  "_help": "Free-for-all: a comment or a like joins at 50 HP (once), a follow is 100 HP, and every gift adds 50 HP per coin (1 coin → 50, 10 coins → 500, 100 coins → 5,000) plus a damage boost. The gift list below is no longer used for power-ups.",
+  "_help": "Free-for-all: a comment or a like joins at 50 HP (once), a follow is 100 HP, and every gift adds 50 HP per coin (1 coin → 50, 10 coins → 500, 100 coins → 5,000). Gifts do not increase damage. The gift list below is no longer used for power-ups.",
 
   "joinWords": {
     "white": ["white", "1", "team white"],

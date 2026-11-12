@@ -132,11 +132,6 @@ function formatHp(n) {
   const m = n / 1e6;
   return (m >= 100 ? String(Math.round(m)) : String(Math.round(m * 10) / 10).replace(/\.0$/, '')) + 'm';
 }
-function formatMul(d) {
-  if (d >= 100) return 'x' + Math.round(d);
-  if (d >= 10) return 'x' + d.toFixed(1);
-  return 'x' + d.toFixed(2);
-}
 const lerp = (a, b, t) => a + (b - a) * t;
 const PI = Math.PI, TAU = Math.PI * 2;
 const EASE = {
@@ -874,7 +869,7 @@ class Fighter {
   isGun() { return this.weapon === 'pistol' || this.weapon === 'rifle'; }
   cy() { return this.y - 95 * this.s; }
   speed() { return (this.superT > 0 ? 1.3 : 1) * (teams[this.team].rageT > 0 ? 1.15 : 1) * (this.giant ? 0.85 : 1); }
-  dmgMul() { return (this.superT > 0 ? 1.35 : 1) * (teams[this.team] && teams[this.team].rageT > 0 ? 1.25 : 1) * (this.giant ? 1.8 : 1) * (this.giftDmg || 1); }
+  dmgMul() { return (this.superT > 0 ? 1.35 : 1) * (teams[this.team] && teams[this.team].rageT > 0 ? 1.25 : 1) * (this.giant ? 1.8 : 1); }
   sound(kind, v = 1) { sfx(kind, this.x, v, kind.startsWith('kiai') || kind === 'grunt' ? TEAMS[this.team].voice : 1); }
   busy() { const m = this.mv; return !!m && !m.d.foot; }
   play(name, o = {}) {
@@ -2114,7 +2109,7 @@ function heroOf(team) { const h = heroes[team]; return h && h.alive ? h : null; 
 function aliveCount() { return fighters.reduce((n, f) => n + (f.alive ? 1 : 0), 0); }
 function pid(ev) { return String((ev && (ev.id || ev.nick)) || 'viewer'); }
 function totalHp(p) { return (p.baseHp || 0) + (p.bonusHp || 0); }
-function giftDmgOf(p) { return 1 + (p.bonusHp || 0) / 200; }
+function giftDmgOf() { return 1; }
 function anyFighter() {
   const live = fighters.filter((f) => f.alive);
   return live.length ? live[Math.floor(Math.random() * live.length)] : null;
@@ -2471,18 +2466,16 @@ function onGift(ev) {
   } else { rememberNick(p, ev); if (p.eliminated && (p.queued || aliveCount() < pitMax() || waitQ.length < WAIT_MAX)) p.eliminated = false; }
   p.bonusHp += reward;
   p.coins += coins * count;
-  const dmg = giftDmgOf(p);
   const label = (ev.giftName || 'Gift') + (count > 1 ? ' x' + count : '');
   const f = p.fighter && p.fighter.alive ? p.fighter : null;
   if (f) {
-    f.maxHp += reward; f.hp += reward; f.giftDmg = dmg; f.name = p.nick;
+    f.maxHp += reward; f.hp += reward; f.giftDmg = 1; f.name = p.nick;
     f.auraT = Math.max(f.auraT, reward >= 40 ? 3.2 : 1.5);
     healFx(f); ring(f.x, f.cy(), reward >= 40 ? 140 : 80, '#ffd84a', 0.45, 6);
     const hpLabel = '+' + formatHp(reward) + ' HP';
     floatText(f.x, f.y - 240 * f.s, hpLabel, '#4dff88', hpLabel.length > 10 ? 30 : 40, 1.4);
-    if (dmg >= 1.15) floatText(f.x + 10, f.y - 300 * f.s, formatMul(dmg) + ' DMG', '#ffd84a', 30, 1.35);
     sfx('powerup', f.x, reward >= 40 ? 1 : 0.6);
-    if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' POWER', '#ffd84a', 92, 1.5);
+    if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' HP', '#ffd84a', 92, 1.5);
   } else if (round.state !== 'end') {
     const hadSeat = p.queued;
     const spawned = dropOrQueue(p, '+' + formatHp(reward));
@@ -2492,12 +2485,12 @@ function onGift(ev) {
       return;
     }
     if (spawned) {
-      spawned.giftDmg = dmg; spawned.auraT = Math.max(spawned.auraT, 2.4);
-      if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' POWER', '#ffd84a', 92, 1.5);
+      spawned.giftDmg = 1; spawned.auraT = Math.max(spawned.auraT, 2.4);
+      if (reward >= 100 && round.state === 'fight' && talk.life < 0.4) callout(p.nick, '+' + formatHp(reward) + ' HP', '#ffd84a', 92, 1.5);
     }
     maybeStart();
   }
-  addFeed([[p.nick, TEAMS[p.color].ui], [' ' + label + ' → +' + formatHp(reward) + ' HP', '#4dff88'], [dmg >= 1.15 ? '  ' + formatMul(dmg) : '', '#ffd84a']]);
+  addFeed([[p.nick, TEAMS[p.color].ui], [' ' + label + ' → +' + formatHp(reward) + ' HP', '#4dff88']]);
   if (reward >= 100) refereeSay('Big gift from ' + p.nick + '!');
 }
 const evQ = [];
@@ -3779,8 +3772,7 @@ function drawWorldUI() {
     ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(p.x - bw / 2 - 2, p.y - 16, bw + 4, 16);
     ctx.fillStyle = hp > 0.5 ? '#3dff7a' : hp > 0.25 ? '#ffd23f' : '#ff4040'; ctx.fillRect(p.x - bw / 2, p.y - 14, Math.max(4, bw * hp), 12);
     const nm = nAlive > 16 ? String(f.name).slice(0, 8) : nAlive > 8 ? String(f.name).slice(0, 10) : shortNick(f.name);
-    const mult = f.giftDmg > 1.12 ? ' ' + formatMul(f.giftDmg) : '';
-    const label = nm + ' ' + formatHp(f.hp) + mult;
+    const label = nm + ' ' + formatHp(f.hp);
     let fs = Math.round((nAlive > 14 ? 20 : nAlive > 8 ? 22 : 26) * zk);
     ctx.font = `${fs}px Russo, Arial, sans-serif`;
     while (fs > 16 && ctx.measureText(label).width > 230) { fs -= 1; ctx.font = `${fs}px Russo, Arial, sans-serif`; }
@@ -4676,6 +4668,20 @@ async function boot() {
       const next = waitQ[0] ? waitQ[0].nick : '';
       dealDamage(null, f, { dmg: Math.ceil(f.hp) + 40, type: 'heavy', kx: 280, ky: -420 }, f.x, f.cy(), { dir: 1 });
       return { out: f.name, next, alive: aliveCount(), waiting: waitQ.length, now: waitQ.map((q) => q.nick) };
+    },
+    // Same landed cross both ways, so a demo can show a gifter hits exactly like a 50 HP fighter.
+    poke: (name, target) => {
+      const A = fighters.find((x) => x.alive && (x.name === name || x.viewerId === name));
+      const D = A && fighters.find((x) => x.alive && x !== A && (!target || x.name === target || x.viewerId === target));
+      if (!A || !D) return null;
+      const before = Math.round(D.hp);
+      D.invuln = 0; A.invuln = 0;
+      A.face = D.x >= A.x ? 1 : -1;
+      A.play('cross', { keepFace: true, noHit: true });
+      if (A.mv) A.mv.t = 0.13;
+      const hit = MV.cross.hits[0];
+      dealDamage(A, D, hit, D.x, D.cy(), { dir: A.face, noReact: true });
+      return { attacker: A.name, defender: D.name, before, after: Math.round(D.hp), dealt: before - Math.round(D.hp), base: hit.dmg, mul: +A.dmgMul().toFixed(3), sudden: !!round.sudden };
     },
     state: () => ({
       round: round.state, n: round.n, winner: round.winnerF && round.winnerF.name,
