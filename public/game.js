@@ -2540,11 +2540,27 @@ function onGift(ev) {
   if (reward >= 100) refereeSay('Big gift from ' + p.nick + '!');
 }
 const evQ = [];
+// A heart from someone already fighting can be dropped. A first join, a bring-back, a follow, or a gift cannot.
+function joinWorth(ev) {
+  const t = ev && ev.type;
+  if (t !== 'like' && t !== 'chat' && t !== 'comment' && t !== 'follow' && t !== 'gift') return false;
+  const p = roster.get(pid(ev));
+  if (!p || t === 'gift' || t === 'follow') return true;
+  if (p.fighter && p.fighter.alive) return false;
+  return !p.queued;
+}
 function onEvent(ev) {
   if (!ev || !ev.type) return;
   if (ev.type === 'status' || ev.type === 'viewers') { dispatchEvent(ev); return; }
-  evQ.push(ev);
-  if (evQ.length > 480) evQ.splice(0, evQ.length - 480);
+  if (joinWorth(ev)) {
+    let i = 0;
+    while (i < evQ.length && joinWorth(evQ[i])) i++;
+    evQ.splice(i, 0, ev);
+  } else evQ.push(ev);
+  if (evQ.length > 480) {
+    for (let i = evQ.length - 1; i >= 0 && evQ.length > 480; i--) if (!joinWorth(evQ[i])) evQ.splice(i, 1);
+    if (evQ.length > 480) evQ.splice(0, evQ.length - 480);
+  }
 }
 function drainEvents() {
   const n = Math.min(evQ.length, 12);
@@ -3793,13 +3809,13 @@ function drawWorldUI() {
     p.y = clamp(p.y, VIEW_TOP + 28, VIEW_BOT - 20); tags.push([f, p]);
   }
   tags.sort((a, b) => a[1].x - b[1].x || a[1].y - b[1].y);
-  if (tags.length > 8) {
+  if (tags.length >= 5) {
     // One row cannot hold this many names. Stagger them so each plate has its own slot.
     const rows = tags.length > 16 ? 3 : 2;
     for (let i = 0; i < tags.length; i++) tags[i][1].row = i % rows;
     for (let row = 0; row < rows; row++) {
       const group = tags.filter((t) => t[1].row === row);
-      const gap = 168;
+      const gap = tags.length > 16 ? 128 : tags.length > 8 ? 168 : 240;
       for (let i = 1; i < group.length; i++) {
         const A = group[i - 1][1], B = group[i][1];
         if (B.x < A.x + gap) B.x = A.x + gap;
@@ -3811,7 +3827,7 @@ function drawWorldUI() {
         const origin = 70 + (avail - span * scale) / 2;
         for (const [, p] of group) {
           p.x = origin + (p.x - first) * scale;
-          p.y = 560 + row * 52;
+          p.y = (tags.length > 8 ? 520 : 500) + row * (tags.length > 8 ? 52 : 74);
         }
       }
     }
@@ -3834,9 +3850,10 @@ function drawWorldUI() {
     ctx.fillStyle = hp > 0.5 ? '#3dff7a' : hp > 0.25 ? '#ffd23f' : '#ff4040'; ctx.fillRect(p.x - bw / 2, p.y - 14, Math.max(4, bw * hp), 12);
     const nm = nAlive > 16 ? String(f.name).slice(0, 8) : nAlive > 8 ? String(f.name).slice(0, 10) : shortNick(f.name);
     const label = nm + ' ' + formatHp(f.hp);
-    let fs = Math.round((nAlive > 14 ? 20 : nAlive > 8 ? 22 : 26) * zk);
+    let fs = Math.round((nAlive > 14 ? 20 : nAlive > 8 ? 22 : 24) * zk);
     ctx.font = `${fs}px Russo, Arial, sans-serif`;
-    while (fs > 16 && ctx.measureText(label).width > 230) { fs -= 1; ctx.font = `${fs}px Russo, Arial, sans-serif`; }
+    const maxLabel = nAlive > 16 ? 108 : nAlive > 8 ? 150 : nAlive >= 5 ? 200 : 230;
+    while (fs > 15 && ctx.measureText(label).width > maxLabel) { fs -= 1; ctx.font = `${fs}px Russo, Arial, sans-serif`; }
     const tw = ctx.measureText(label).width + 24, ty = p.y - 24;
     ctx.globalAlpha = 0.95; ctx.fillStyle = t.panel; roundRect(p.x - tw / 2, ty - fs - 3, tw, fs + 9, 8); ctx.fill();
     ctx.strokeStyle = t.ui; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = t.text; ctx.fillText(label, p.x, ty); ctx.globalAlpha = 1;
