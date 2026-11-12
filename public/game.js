@@ -845,7 +845,7 @@ class Fighter {
     this.tr = {}; for (const k of TRAIL_KEYS) this.tr[k] = [];
     this.alive = true; this.walkPh = rand(0, 6); this.lastStep = 0; this.walkV = 0; this.aim = 0;
     this.dropIn = !!o.dropIn; this.scripted = false; this.held = false; this.lastTouch = 0;
-    this.joinShield = false; this.shieldGround = -1;
+    this.invulnUntilLand = false;
     this.vo = { x: 0, y: 0 }; this.prevMode = null; this.prevHip = null;
     this.brain = new Brain(this);
     this.computeJoints();
@@ -897,9 +897,6 @@ class Fighter {
     const T = this;
     T.auraT -= dt; if ((T.auraT > 0 || T.superT > 0) && Math.random() < dt * 35) ember(T);
     T.invuln -= dt; T.flash -= dt; T.comboT -= dt; T.superT -= dt; T.dropT -= dt; T.comboPop -= dt; T.wallT -= dt;
-    // A mid-fight joiner stays untouchable until they have had 3 seconds on the ground.
-    if (T.joinShield && T.shieldGround >= JOIN_SHIELD) { T.joinShield = false; T.invuln = 0; }
-    else if (T.joinShield) T.invuln = Math.max(T.invuln, 0.35);
     if (T.comboT <= 0) T.combo = 0;
     if (Math.abs(T.s - T.ts) > 0.005) T.s = lerp(T.s, T.ts, Math.min(1, dt * 4));
     if (T.giantT > 0) { T.giantT -= dt; if (T.giantT <= 0) { T.ts = BASE_S; floatText(T.x, T.y - 200 * T.s, 'GIANT MODE OVER', '#aab', 22); } }
@@ -921,14 +918,6 @@ class Fighter {
       }
       if (T.y >= FLOOR) { T.y = FLOOR; T.vy = 0; T.onGround = true; }
       if (T.onGround && !was) T.landed(vyPre);
-      if (T.joinShield && T.onGround) {
-        if (T.shieldGround < 0) {
-          T.shieldGround = 0;
-          ring(T.x, T.y - 30, 130 * T.s, '#b8ffd4', 0.75, 8);
-          floatText(T.x, T.y - 310 * T.s, 'SHIELD', '#7dffb0', 30, 1.2);
-        }
-        T.shieldGround += dt;
-      }
       const m = 16 * T.s + 6;
       if (T.x < WALL_L + m || T.x > WALL_R - m) {
         const side = T.x < W / 2 ? -1 : 1;
@@ -995,6 +984,8 @@ class Fighter {
       if (T.announce) { floatText(T.x, T.y - 250 * T.s, T.announce, '#ffd84a', 30, 0.75); T.announce = ''; }
       if (T.giant) shake(14);
     }
+    // Mid-fight joiners cannot be hit in the air. The instant they stand on the ground, they can.
+    if (T.invulnUntilLand) { T.invulnUntilLand = false; T.invuln = 0; }
     if (T.mv && T.mv.d.hurt && T.mv.d.untilLand && vy > 300) { shake(12); dustCloud(T.x, T.y, 9, 1); dirt(T.x, T.y, 0, 10); sfx('thud', T.x, 0.8); }
   }
   tryHit(h) {
@@ -1006,13 +997,7 @@ class Fighter {
     const lp = T.J[h.limb] || T.J.hF;
     if (h.h === 'any') { if (Math.abs(e.cy() - T.cy()) > 175 * Math.max(T.s, e.s)) return false; }
     else if (lp.y < e.y - 215 * e.s || lp.y > e.y + 12) return false;
-    if (e.invuln > 0) {
-      if (e.joinShield) {
-        ring(e.x, e.cy(), 100, '#b8ffd4', 0.4, 6);
-        floatText(e.x, e.y - 250 * e.s, 'SAFE', '#7dffb0', 26, 0.5);
-      }
-      return false;
-    }
+    if (e.invuln > 0) return false;
     resolveHit(T, e, h, lp);
     return true;
   }
@@ -2175,14 +2160,6 @@ function gapX() {
   }
   return clamp(best, 120, W - 120);
 }
-// Land, then this many seconds of protection. Hits do not land during it.
-const JOIN_SHIELD = 3;
-function liveDrop() { return round.state === 'fight' || round.state === 'countdown'; }
-function armJoinShield(f) {
-  f.joinShield = true;
-  f.shieldGround = -1;
-  f.invuln = 99;
-}
 // Left or right edge, whichever has more room. Stays about 160px inside the wall.
 function safeEdgeX() {
   const alive = fighters.filter((f) => f.alive);
@@ -2197,10 +2174,14 @@ function safeEdgeX() {
   return ld >= rd ? left : right;
 }
 function spawnDrop(p, announce) {
-  const live = liveDrop();
-  const f = spawnBody(p, live ? safeEdgeX() : gapX(), announce, live ? 99 : 2.8);
-  if (f && live) armJoinShield(f);
-  return f;
+  // A live fight drops you on the open side. You can be hit the moment you land.
+  // Lobby and the countdown keep the 2.8s start-of-round window. FIGHT! trims that to 0.2s.
+  if (round.state === 'fight') {
+    const f = spawnBody(p, safeEdgeX(), announce, 99);
+    if (f) f.invulnUntilLand = true;
+    return f;
+  }
+  return spawnBody(p, gapX(), announce, 2.8);
 }
 function spawnBody(p, x, announce, invuln) {
   waitQ = waitQ.filter((q) => q !== p);
@@ -2349,7 +2330,7 @@ function updateRound(dt) {
     }
     if (round.t >= 2.5) {
       round.state = 'fight'; round.t = 0; round.startedWith = Math.max(2, aliveCount());
-      for (const f of fighters) if (f.alive && !f.joinShield) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
+      for (const f of fighters) if (f.alive) { f.invuln = Math.min(f.invuln, 0.2); f.lastTouch = clock; }
       callout('FIGHT!', '', '#ff4545', 170, 0.9);
       sfx('go'); sfx('crowd'); shake(10);
       talkAt = clock + 2.6;
@@ -3210,21 +3191,6 @@ function drawFighter(f) {
     ctx.globalAlpha = 1;
   }
   drawBody(J, f.team, s, f.flash > 0, blink ? 0.7 : 1);
-  if (f.joinShield && J.hip && J.head) {
-    const cy = (J.head.y + J.hip.y) * 0.5;
-    const pulse = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(clock * 7));
-    ctx.save();
-    ctx.globalAlpha = pulse * 0.28;
-    ctx.fillStyle = '#b8ffd4';
-    ctx.beginPath();
-    ctx.ellipse(J.hip.x, cy, 58 * s, 108 * s, 0, 0, TAU);
-    ctx.fill();
-    ctx.globalAlpha = Math.min(1, pulse + 0.25);
-    ctx.strokeStyle = '#eafff4';
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    ctx.restore();
-  }
   drawWeapon(f);
   drawEyes(f);
   if (!lying) { drawFace(f); if (ta > 0.01 || f.talk) drawMouth(f, ta); }
