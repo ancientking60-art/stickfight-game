@@ -1,5 +1,5 @@
 /* STICK FIGHT - free-for-all stickman pit for TikTok LIVE.
-   Like drops your fighter in at 50 HP (once). Follow is 100 HP. Gifts add 50 HP per coin.
+   A like or a comment drops you in at 50 HP (once). Follow is 100 HP. Gifts add 50 HP per coin.
    Events come from server.js over WebSocket (or the test buttons). */
 'use strict';
 
@@ -2325,18 +2325,13 @@ function updateRound(dt) {
     const limit = G_().roundSeconds || 90;
     if (!round.sudden && round.time > limit) {
       round.sudden = true; round.sdT = 0;
-      callout('SUDDEN DEATH!', 'HP IS DROPPING', '#ff4545', 120, 1.6);
+      callout('SUDDEN DEATH!', 'HITS HIT HARDER', '#ff4545', 120, 1.6);
       sfx('sudden'); shake(12);
     }
-    if (round.sudden) {
-      round.sdT += dt;
-      if (round.sdT > 8) {
-        for (const f of fighters) if (f.alive && f.hp > 0) {
-          f.hp -= Math.max(8, f.maxHp * 0.045) * dt;
-          if (f.hp <= 0) { f.hp = 0.2; dealDamage(null, f, { dmg: 2, type: 'blast', kx: 480, ky: -560 }, f.x, f.cy(), { dir: -f.face }); }
-        }
-      }
-    }
+    // Sudden death only makes landed hits hurt more (suddenDeathDamage). It used to
+    // also drain maxHp * 4.5% every second with no punch, so a big gift melted while
+    // the fighter was just standing there.
+    if (round.sudden) round.sdT += dt;
     return;
   }
   if (round.state === 'end' && round.t > 6.6) openNextRound();
@@ -2354,6 +2349,38 @@ function bringBack(p, announce) {
   const back = dropOrQueue(p, announce, true);
   maybeStart();
   return back;
+}
+function onComment(ev) {
+  const id = pid(ev);
+  let p = roster.get(id);
+  if (p) {
+    rememberNick(p, ev);
+    if (p.fighter && p.fighter.alive) {
+      addFeed([[p.nick, TEAMS[p.color].ui], [' already in the fight', '#c9d6ff']]);
+      return;
+    }
+    if (p.queued) {
+      addFeed([[p.nick, TEAMS[p.color].ui], [' already waiting #' + queuePlace(p), '#ffd84a']]);
+      return;
+    }
+    const hp = totalHp(p);
+    const back = dropOrQueue(p, 'COMMENT');
+    if (back) addFeed([[p.nick, TEAMS[p.color].ui], [' commented in — ' + hp + ' HP', '#c9d6ff']]);
+    else if (p.queued) addFeed([[p.nick, TEAMS[p.color].ui], [' commented — waiting ' + waitQ.length + '/' + WAIT_MAX, '#ffd84a']]);
+    maybeStart();
+    return;
+  }
+  if (aliveCount() >= pitMax() && waitQ.length >= WAIT_MAX) {
+    addFeed([[String(ev.nick || 'someone').slice(0, 18), '#c9d6ff'], [' cannot join — line is full', '#ff8080']]);
+    return;
+  }
+  p = makePlayer(ev, LIKE_HP());
+  roster.set(id, p);
+  applyAvatar(p, ev);
+  const joined = dropOrQueue(p, 'COMMENT');
+  if (joined) addFeed([[p.nick, TEAMS[p.color].ui], [' commented in — ' + p.baseHp + ' HP', '#c9d6ff']]);
+  else if (p.queued) addFeed([[p.nick, TEAMS[p.color].ui], [' commented — waiting ' + waitQ.length + '/' + WAIT_MAX, '#ffd84a']]);
+  maybeStart();
 }
 function onLike(ev) {
   const id = pid(ev);
@@ -2491,7 +2518,7 @@ function dispatchEvent(ev) {
   if (!ev || !ev.type) return;
   switch (ev.type) {
     case 'status': if (ev.mode === 'live' && S.live.mode !== 'live') S.liveAt = performance.now(); S.live = ev; updateLiveInfo(); break;
-    case 'chat': break;
+    case 'chat': case 'comment': onComment(ev); break;
     case 'join': break;
     case 'gift': onGift(ev); break;
     case 'like': onLike(ev); break;
@@ -3940,7 +3967,7 @@ function drawHUD() {
   while (ifs > 16 && ctx.measureText(info).width > 1020) { ifs -= 1; ctx.font = ifs + 'px Russo, Arial, sans-serif'; }
   outlined(info, W / 2, 112, ifs + 'px Russo, Arial, sans-serif', fullLine ? '#ffb15a' : (phase === 'SUDDEN DEATH' ? '#ff6060' : '#d5def8'), '#000', 5);
   const likeHp = LIKE_HP(), followHp = FOLLOW_HP(), mul = GIFT_X();
-  const legend = 'LIKE = JOIN ' + likeHp + ' HP    ·    FOLLOW = ' + followHp + ' HP    ·    GIFT = ' + mul + ' HP / COIN';
+  const legend = 'LIKE / COMMENT = ' + likeHp + ' HP    ·    FOLLOW = ' + followHp + ' HP    ·    GIFT = ' + mul + ' / COIN';
   let lfs = 30; ctx.font = lfs + 'px Russo, Arial, sans-serif';
   while (lfs > 18 && ctx.measureText(legend).width > 1000) { lfs -= 1; ctx.font = lfs + 'px Russo, Arial, sans-serif'; }
   const lw = ctx.measureText(legend).width + 48;
@@ -3961,8 +3988,8 @@ function drawHUD() {
   ctx.globalAlpha = 1;
 
   if (round.state === 'lobby' && alive < 2) {
-    outlined(alive === 0 ? 'LIKE TO DROP IN' : 'NEED ONE MORE FIGHTER', W / 2, 860, '78px Bangers, Impact, sans-serif', '#ffffff', '#1340a8', 10);
-    outlined('Like joins at ' + likeHp + ' HP. Follow is ' + followHp + '. Gifts are ' + mul + ' HP per coin.', W / 2, 930, '28px Russo, Arial, sans-serif', '#ffd84a', '#000', 5);
+    outlined(alive === 0 ? 'COMMENT OR LIKE TO JOIN' : 'NEED ONE MORE FIGHTER', W / 2, 860, '64px Bangers, Impact, sans-serif', '#ffffff', '#1340a8', 10);
+    outlined('Comment or like joins at ' + likeHp + ' HP. Follow is ' + followHp + '. Gifts are ' + mul + ' HP per coin.', W / 2, 930, '26px Russo, Arial, sans-serif', '#ffd84a', '#000', 5);
   }
   if (round.state === 'countdown') {
     const n = Math.max(1, 3 - Math.floor(round.t / 0.8)), fr = (round.t % 0.8) / 0.8;
@@ -4344,6 +4371,8 @@ function simTarget() {
   const u = newFake(); sim.last = u; return u;
 }
 function simLikeNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'like', ...u, count: 1 }); return u; }
+function simCommentNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'chat', ...u, text: 'join' }); return u; }
+function simCommentAgain() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'chat', id: u.id, nick: u.nick, avatar: u.avatar, text: 'again' }); return u; }
 function simLikeAgain() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'like', id: u.id, nick: u.nick, avatar: u.avatar, count: 1 }); return u; }
 function simFollowNew() { const u = faceFor(newFake()); sim.last = u; onEvent({ type: 'follow', ...u }); return u; }
 function simFollowLast() { const u = faceFor(sim.last || simTarget()); onEvent({ type: 'follow', id: u.id, nick: u.nick, avatar: u.avatar }); return u; }
@@ -4396,6 +4425,8 @@ function setupPanel() {
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   const likeBtn = () => simLikeNew();
   const likeAgainBtn = () => simLikeAgain();
+  const commentBtn = () => simCommentNew();
+  const commentAgainBtn = () => simCommentAgain();
   const followBtn = () => simFollowNew();
   const followLastBtn = () => simFollowLast();
   const autoBtn = () => { sim.auto = !sim.auto; const b = document.getElementById('autoBtn'); if (b) b.classList.toggle('on', sim.auto); };
@@ -4403,6 +4434,8 @@ function setupPanel() {
   const newRound = () => openNextRound();
   bind('likeBtn', likeBtn);
   bind('likeAgainBtn', likeAgainBtn);
+  bind('commentBtn', commentBtn);
+  bind('commentAgainBtn', commentAgainBtn);
   bind('followBtn', followBtn);
   bind('followLastBtn', followLastBtn);
   bind('autoBtn', autoBtn);
@@ -4418,6 +4451,8 @@ function setupPanel() {
     if (e.code === 'KeyH') panel.classList.toggle('hidden');
     else if (e.code === 'KeyL') likeBtn();
     else if (e.code === 'KeyK') likeAgainBtn();
+    else if (e.code === 'KeyC') commentBtn();
+    else if (e.code === 'KeyV') commentAgainBtn();
     else if (e.code === 'KeyF') followBtn();
     else if (e.code === 'KeyG') followLastBtn();
     else if (e.code === 'KeyA') autoBtn();
@@ -4634,7 +4669,7 @@ async function boot() {
   safe('round', startRound);
   window.SF = {
     step: (n = 1, fps = 30) => { for (let i = 0; i < n; i++) tick(1 / fps); render(); },
-    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simFollowNew, showTalk, talk, pitMax, waitMax: () => WAIT_MAX, placeholderAvatar,
+    event: onEvent, round, fighters: () => fighters, roster, supporters, sim, simGift, simJoin, simLikes, simLikeNew, simCommentNew, simCommentAgain, simFollowNew, showTalk, talk, pitMax, waitMax: () => WAIT_MAX, placeholderAvatar,
     knockOut: (name) => {
       const f = fighters.find((x) => x.alive && (!name || x.name === name || x.viewerId === name));
       if (!f) return null;

@@ -83,7 +83,11 @@
 <div id="sim">
   <h3>TEST (press H to hide)</h3>
   <div class="row"><button id="likeBtn">New like — 50 HP (L)</button></div>
-  <div class="row"><button id="likeAgainBtn">Same person likes (K)</button></div>
+  <div class="row"><button id="commentBtn">New comment — 50 HP (C)</button></div>
+  <div class="row">
+    <button id="likeAgainBtn">Same person likes (K)</button>
+    <button id="commentAgainBtn">Same comment (V)</button>
+  </div>
   <div class="row">
     <button id="followBtn">New follow — 100 HP (F)</button>
     <button id="followLastBtn">Follow last (G)</button>
@@ -100,14 +104,14 @@
     <button id="newRoundBtn">New round (N)</button>
   </div>
   <div class="row"><button id="soundBtn">Sound (M)</button></div>
-  <small>Like joins once at 50 HP. Follow is 100 HP. A gift adds 50 HP per coin (1→50, 10→500, 100→5,000) and makes hits harder.<br>
-  Keys: L new like, K same person likes again, F new follow, G follow last, Q rose, E 10 coins, R 100 coins, T 500 coins, A auto, N new round, H hide.<br>
+  <small>A comment or a like joins once at 50 HP. Follow is 100 HP. A gift adds 50 HP per coin (1→50, 10→500, 100→5,000) and makes hits harder.<br>
+  Keys: C new comment, V same person comments again, L new like, K same person likes again, F new follow, G follow last, Q rose, E 10 coins, R 100 coins, T 500 coins, A auto, N new round, H hide.<br>
   <span id="liveInfo">-</span></small>
 </div>
 <div id="tap" class="hidden">
   <div class="men">FREE FOR ALL</div>
   <div class="t1">TAP TO START</div>
-  <div class="t2">like drops you in · gifts make you stronger</div>
+  <div class="t2">comment or like drops you in · gifts make you stronger</div>
   <form id="nameBox" class="hidden" autocomplete="off">
     <label for="nameIn">Your TikTok name</label>
     <div><input id="nameIn" type="text" placeholder="@yourname" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"><button type="submit">GO</button></div>
