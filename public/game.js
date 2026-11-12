@@ -1204,7 +1204,11 @@ function wallBounce(T, side, vx) {
 // the KO: impact frame, freeze, long slow motion, orbiting camera, ragdoll flies
 function finisher(A, D, h, dir) {
   D.hp = 0; D.alive = false; D.mv = null;
-  if (D.user) { D.user.eliminated = true; D.user.queued = false; waitQ = waitQ.filter((q) => q !== D.user); }
+  if (D.user) {
+    D.user.eliminated = true; D.user.queued = false;
+    D.user.bonusHp = 0; // a knockout spends the gift. The next entry is base HP unless they gift again.
+    waitQ = waitQ.filter((q) => q !== D.user);
+  }
   tryDropQueued();
   const others = fighters.filter((f) => f.alive).length;
   const finalBlow = others <= 1 && !waitQ.length;
@@ -2246,7 +2250,7 @@ function tryDropQueued() {
 }
 function spawnRoster() {
   // The champion stays. Knocked-out players are eliminated and are not in this list.
-  // Gifted HP (bonusHp) is kept, so the new round starts at base + the gifts they paid for.
+  // A survivor keeps gifted HP. The new body is a full bar of base + those gifts.
   const champ = round.winnerF && round.winnerF.user && !round.winnerF.user.eliminated ? round.winnerF.user : null;
   fighters = [];
   ragdolls.length = 0;
