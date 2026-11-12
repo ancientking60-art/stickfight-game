@@ -2130,7 +2130,7 @@ function makePlayer(ev, baseHp) {
     id: pid(ev),
     nick: String(ev.nick || ev.id || 'viewer').replace(/\s+/g, ' ').trim().slice(0, 18) || 'viewer',
     color: pickColor(),
-    baseHp, bonusHp: 0, coins: 0, wins: 0,
+    baseHp, bonusHp: 0, coins: 0, wins: 0, // bonusHp is gifted HP for this page session. It only grows.
     fighter: null, queued: false, eliminated: false, avatarUrl: '', avatarRec: null
   };
 }
@@ -2246,8 +2246,9 @@ function tryDropQueued() {
 }
 function spawnRoster() {
   // The champion stays. Knocked-out players are eliminated and are not in this list.
+  // Gifted HP stays on the viewer for the whole Live page. The new body starts at
+  // base + that full total, so hits from the last round do not carry over.
   const champ = round.winnerF && round.winnerF.user && !round.winnerF.user.eliminated ? round.winnerF.user : null;
-  if (champ) champ.bonusHp = 0;
   fighters = [];
   ragdolls.length = 0;
   waitQ = [];
@@ -2483,10 +2484,6 @@ function onGift(ev) {
   const id = pid(ev);
   let p = roster.get(id);
   if (!p) {
-    if (aliveCount() >= pitMax() && waitQ.length >= WAIT_MAX) {
-      addFeed([[String(ev.nick || 'someone').slice(0, 18), '#ffd84a'], [' gift missed — line is full', '#ff8080']]);
-      return;
-    }
     p = makePlayer(ev, LIKE_HP());
     roster.set(id, p);
     applyAvatar(p, ev);
@@ -2507,8 +2504,9 @@ function onGift(ev) {
     const hadSeat = p.queued;
     const spawned = dropOrQueue(p, '+' + formatHp(reward));
     if (!spawned && !p.queued && !hadSeat) {
-      p.bonusHp -= reward;
-      p.coins -= coins * count;
+      // The pit and the waiting line are full. The coins still belong to this viewer.
+      p.eliminated = true;
+      addFeed([[p.nick, (TEAMS[p.color] && TEAMS[p.color].ui) || '#fff'], [' ' + label + ' → +' + formatHp(reward) + ' HP saved for when they join', '#ffd84a']]);
       return;
     }
     if (spawned) {
