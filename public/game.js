@@ -2246,8 +2246,8 @@ function tryDropQueued() {
 }
 function spawnRoster() {
   // The champion stays. Knocked-out players are eliminated and are not in this list.
+  // Only the champion still has gifted HP here (see clearGiftsExceptChampion). The new body is a full bar of base + those gifts.
   const champ = round.winnerF && round.winnerF.user && !round.winnerF.user.eliminated ? round.winnerF.user : null;
-  if (champ) champ.bonusHp = 0;
   fighters = [];
   ragdolls.length = 0;
   waitQ = [];
@@ -2296,6 +2296,7 @@ function endRound(winner) {
   round.winner = round.winnerF ? round.winnerF.team : -1;
   bullets.length = 0; bombs.length = 0; strikeQueue.length = 0; planes.length = 0;
   for (const f of fighters) if (f.alive) f.invuln = 99;
+  clearGiftsExceptChampion();
   if (round.winnerF) {
     const p = round.winnerF.user;
     if (p) p.wins = (p.wins || 0) + 1;
@@ -2305,6 +2306,19 @@ function endRound(winner) {
     try { showTalk('win', { text: champLine, name: champName, who: round.winnerF, life: 6.4 }); } catch (e) {}
     sfx('fanfare'); sfx('crowd');
   } else callout('DRAW!', 'NOBODY LEFT STANDING', '#ffd84a', 120, 2);
+}
+// Gifted HP lasts the whole round: a knocked-out gifter who comes back in the same round
+// gets base + every gift again. When the round ends, only the champion keeps it. Everyone
+// else (knocked out, still standing but not the winner, or waiting in the line) goes back
+// to base HP (50, or 100 after a follow) until they gift again. A gift sent during the
+// winner screen counts for the next round, because this runs once when the round ends.
+function clearGiftsExceptChampion() {
+  const w = round.winnerF;
+  const champ = w && w.alive && w.user ? w.user : null;
+  for (const p of roster.values()) {
+    if (p === champ) continue;
+    p.bonusHp = 0; p.coins = 0;
+  }
 }
 function openNextRound() {
   bullets.length = 0; bombs.length = 0; planes.length = 0; strikeQueue.length = 0;
